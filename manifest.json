@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "image-darkmodifier",
+	"name": "Image Darkmodifier",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Turn white image (e.g. screen shots from papers) into dark mode.",
+	"author": "0qln",
+	"authorUrl": "",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }
