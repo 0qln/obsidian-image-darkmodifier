@@ -1,81 +1,207 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, FileSystemAdapter, MarkdownPostProcessorContext, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import * as path from 'path';
+import * as fs from 'fs';
+import { Image } from 'image-js';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
+interface ImageDarkmodifierPluginSettings {
 	mySetting: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
+const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
 	mySetting: 'default'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class ImageDarkmodifierPlugin extends Plugin {
+	settings: ImageDarkmodifierPluginSettings;
+	private cacheDir: string;
+	private vaultPath: string;
+
+	getVaultPath(): string | null {
+		let adapter = this.app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) {
+			return adapter.getBasePath();
+		}
+		return null;
+	}
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		this.vaultPath = this.getVaultPath() || '';
+		this.cacheDir = path.join(".obsidian", '.dark-image-cache');
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+		console.log('onload')
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
+		this.registerMarkdownPostProcessor(
+			this.processImages.bind(this)
+		);
+	}
+
+	private async processImages(element: HTMLElement, context: MarkdownPostProcessorContext) {
+		// Wait for the document to load
+		await sleep(100);
+
+		const embeds = element.querySelectorAll('.internal-embed.media-embed.image-embed');
+
+		console.log(embeds);
+
+		embeds.forEach(async (embed) => {
+			console.log(embed);
+			const alt = embed.getAttribute('alt') || '';
+			console.log(alt)
+			if (!alt.includes('@dark')) return;
+
+			const src = embed.getAttribute('src');
+			if (!src) return;
+
+			console.log(src)
+
+			const img = embed.querySelector('img');
+			if (!img) return;
+
+			// Get the actual file
+			const file = this.app.vault.getAbstractFileByPath(src!);
+			if (!(file instanceof TFile)) return;
+		
+			console.log(file);
+
+			try {
+				// Process image and get cache path
+				const cachePath = await this.processImage(file as TFile);
+
+				// Create new image element
+				console.log(path.join(this.vaultPath, cachePath));
+				img!.src = img.src.replace(file.path, cachePath);		
+			} catch (error) {
+				console.error('Dark Image Processing Error:', error);
 			}
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+	}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+	private async processImage(file: TFile): Promise<string> {
+		const cacheName = `${file.basename}_dark.png`;
+		const cachePath = path.join(this.cacheDir, cacheName);
+
+		// Check cache freshness
+		if (fs.existsSync(cachePath)) {
+			const cacheTime = fs.statSync(cachePath).mtimeMs;
+			if (cacheTime > file.stat.mtime) return cachePath;
+		}
+
+		try {
+			// Read image from the vault
+			const buffer = await this.app.vault.readBinary(file);
+
+			// Load the buffer with image‑js
+			let image = await Image.load(buffer);
+
+			// Ensure we are in 8‑bit RGBA space (adds alpha if missing)
+			if (image.alpha === 0) {
+				image = image.rgba8();
+			}
+
+			// Invert colours (returns a copy)
+			const inverted = image.invert();
+
+			const threshold = 13; // 0.05 * 255 ≈ 13
+			const data = inverted.data; // Uint8ClampedArray ordered RGBA per pixel
+
+			// Walk through every pixel
+			for (let i = 0; i < data.length; i += 4) {
+				const r = data[i];
+				const g = data[i + 1];
+				const b = data[i + 2];
+
+				// Near‑black → fully transparent
+				if (r < threshold && g < threshold && b < threshold) {
+					data[i] = data[i + 1] = data[i + 2] = 0;
+					data[i + 3] = 0;
+					continue;
 				}
+
+				// Otherwise boost lightness in HSL space
+				const [h, s, l] = this.rgbToHsl(r, g, b); // l ∈ [0,100]
+				const [nr, ng, nb] = this.hslToRgb(h, s, Math.min(100, l * 1.2));
+
+				data[i] = nr;
+				data[i + 1] = ng;
+				data[i + 2] = nb;
+				// alpha channel stays unchanged
 			}
-		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+			// Persist the transformed image
+			// await inverted.save(cachePath, { format: 'png', useCanvas: true });
+			// return cachePath;
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+			// 6. Serialise the transformed image to a PNG buffer
+			const pngBuffer = await inverted.toBuffer({format: 'png'});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+			// 7. Persist the buffer using Obsidian's file API
+			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
+			
+			return cachePath;
+
+			// const path = await inverted.toDataURL(cachePath, { format: 'png' });
+			// console.log(path)
+			// return path;
+
+		} catch (error) {
+			throw new Error(`Failed to process image: ${error.message}`);
+		}
+	}
+
+	// Helper: Convert RGB (0-255) to HSL (0-360, 0-100, 0-100)
+	private rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+		r /= 255; g /= 255; b /= 255;
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		let h = 0, s = 0;
+		const l = (max + min) / 2 * 100;
+
+		if (max !== min) {
+			const d = max - min;
+			s = l > 50 ? d / (2 - max - min) : d / (max + min);
+			s *= 100;
+
+			switch (max) {
+				case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+				case g: h = (b - r) / d + 2; break;
+				case b: h = (r - g) / d + 4; break;
+			}
+			h = (h * 60) % 360;
+		}
+		return [h < 0 ? h + 360 : h, s, l];
+	}
+
+	// Helper: Convert HSL to RGB (0-255)
+	private hslToRgb(h: number, s: number, l: number): [number, number, number] {
+		h /= 360; s /= 100; l /= 100;
+		let r, g, b;
+
+		if (s === 0) {
+			r = g = b = l;
+		} else {
+			const hue2rgb = (p: number, q: number, t: number) => {
+				if (t < 0) t += 1;
+				if (t > 1) t -= 1;
+				if (t < 1 / 6) return p + (q - p) * 6 * t;
+				if (t < 1 / 2) return q;
+				if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+				return p;
+			};
+
+			const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+			const p = 2 * l - q;
+			r = hue2rgb(p, q, h + 1 / 3);
+			g = hue2rgb(p, q, h);
+			b = hue2rgb(p, q, h - 1 / 3);
+		}
+
+		return [
+			Math.round(r * 255),
+			Math.round(g * 255),
+			Math.round(b * 255)
+		];
 	}
 
 	onunload() {
@@ -91,34 +217,24 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
 class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: ImageDarkmodifierPlugin;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: ImageDarkmodifierPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 
 		containerEl.empty();
+
+		// todo: clear cache button
+
+		// todo: cache directory option
+
+		// todo: option to detect, whether an image should get the filter automatically and then also add a @dark in the alt after the user pasted the image, as if the user did it.
 
 		new Setting(containerEl)
 			.setName('Setting #1')
