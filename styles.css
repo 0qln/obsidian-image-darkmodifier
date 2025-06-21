@@ -6,24 +6,3 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
-
-/* Apply dark mode transformations */
-.image-dark-mode img {
-    filter: invert(100%) brightness(1.2) !important;
-    mix-blend-mode: screen;
-}
-
-/* Handle transparency for dark backgrounds */
-.image-dark-mode {
-    background-blend-mode: multiply;
-    background-color: var(--background-primary);
-}
-
-/* Fix alignment issues */
-.image-dark-mode img {
-    isolation: isolate;
-}
-
-img[alt="img-darkmode"] {
-    
-}

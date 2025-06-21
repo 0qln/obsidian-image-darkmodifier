@@ -1,230 +1,236 @@
-import { App, Editor, FileSystemAdapter, MarkdownPostProcessorContext, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, FileSystemAdapter, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 import * as path from 'path';
 import * as fs from 'fs';
 import { Image } from 'image-js';
+import * as crypto from 'crypto';
+import { assert } from 'console';
 
 interface ImageDarkmodifierPluginSettings {
-	mySetting: string;
+	cacheDir: string;
+	imgSelector: string;
 }
 
 const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
-	mySetting: 'default'
+	cacheDir: path.join('.obsidian', '.dark-image-cache'),
+	imgSelector: 'img[alt*="@"]',
 }
 
-export default class ImageDarkmodifierPlugin extends Plugin {
-	settings: ImageDarkmodifierPluginSettings;
+class ImageCache {
+	private ensureCacheDir() {
+		const dir = path.join(this.vaultPath, this.cacheDir);
+		if (!fs.existsSync(dir)) {
+			fs.mkdirSync(dir, { recursive: true });
+		}
+	}
+
 	private cacheDir: string;
 	private vaultPath: string;
-	private observer: MutationObserver;
-	private processedElements: WeakSet<HTMLElement> = new WeakSet();
 
-	getVaultPath(): string | null {
-		let adapter = this.app.vault.adapter;
-		if (adapter instanceof FileSystemAdapter) {
-			return adapter.getBasePath();
-		}
-		return null;
+	constructor(vaultPath: string, cacheDir: string) {
+		this.cacheDir = cacheDir;
+		this.vaultPath = vaultPath;
+		this.ensureCacheDir();
 	}
 
-	async onload() {
-		await this.loadSettings();
-
-		this.vaultPath = this.getVaultPath() || '';
-		this.cacheDir = path.join(".obsidian", '.dark-image-cache');
-
-		console.log('onload')
-
-		this.processAllEmbeds();
-
-		this.observer = new MutationObserver((mutations) => {
-			mutations.forEach((mutation) => {
-				mutation.addedNodes.forEach((node) => {
-					if (node instanceof HTMLElement) {
-						this.processNode(node);
-					}
-				});
-			});
-		});
-
-		this.observer.observe(document.body, {
-			childList: true,
-			subtree: true,
-			attributes: false,
-			characterData: false
-		});
-
-		// Re-process when switching between modes
-		this.registerEvent(
-			this.app.workspace.on('layout-change', () => {
-				this.processAllEmbeds();
-			})
-		);
-
-		// Re-process when files are modified
-		this.registerEvent(
-			this.app.vault.on('modify', (file) => {
-				if (file instanceof TFile) {
-					this.clearCache(file);
-					this.processAllEmbeds();
-				}
-			})
-		);
+	setCacheDir(newPath: string) {
+		this.cacheDir = newPath;
+		this.ensureCacheDir();
 	}
-	
-	 private processAllEmbeds() {
-        const embeds = document.querySelectorAll('.internal-embed.media-embed.image-embed');
-        embeds.forEach(embed => {
-            if (!this.processedElements.has(embed as HTMLElement)) {
-                this.processEmbed(embed as HTMLElement);
-            }
-        });
-    }
-	
-	private processNode(node: HTMLElement) {
-        // Check if node is an image embed
-        if (node.matches('.internal-embed.media-embed.image-embed')) {
-            this.processEmbed(node);
-            return;
-        }
 
-        // Check for embeds within the node
-        const embeds = node.querySelectorAll('.internal-embed.media-embed.image-embed');
-        embeds.forEach(embed => {
-            if (!this.processedElements.has(embed as HTMLElement)) {
-                this.processEmbed(embed as HTMLElement);
-            }
-        });
-    }
-	
-	private async processEmbed(embed: HTMLElement) {
-        // Skip if already processed
-        if (this.processedElements.has(embed)) return;
-	
-		console.log("process embed: ", embed)
-        
-		const alt = embed.getAttribute('alt') || '';
-		if (!alt.includes('@dark')) return;
-	
-		console.log(alt)
-        
-        const src = embed.getAttribute('src');
-        if (!src) return;
-	
-		console.log(src)
-        
-        const img = embed.querySelector('img');
-        if (!img) return;
-	
-		console.log(img)
-        
-        // Skip if already processed
-        if (img.hasAttribute('data-dark-processed')) return;
-        
-        // Get the actual file
-        const file = this.app.vault.getAbstractFileByPath(src);
-        if (!(file instanceof TFile)) return;
-		console.log(file);
-        
-        try {
-            // Process image and get cache path
-            const cachePath = await this.processImage(file);
+	private getSafeHash(filePath: string, length = 12): string {
+		return crypto
+			.createHash('sha256')
+			.update(filePath)
+			.digest('hex')
+			.substring(0, length);
+	}
 
-			console.log(path.join(this.vaultPath, cachePath));
+	cacheName(file: TFile, filterNames: Array<string>): string {
+		const hash = this.getSafeHash(file.path);
+		const name = file.basename.replace(/[^a-zA-Z0-9_-]/g, '_');
+		return `${name}_${hash}_${filterNames.join('_')}.png`;
+	}
 
-			// update img element
-			// there's sometimes weird query params like "path/file.png?9845729" behind the thingy, so 
-			// we need to also replace those.
-			img.src = img.src.replace(new RegExp(`${file.path}.*`), cachePath);
-            img.classList.add('dark-processed-image');
-            img.setAttribute('data-dark-processed', 'true');
+	cachePath(file: TFile, filternames: Array<string>): string {
+		return path.join(this.cacheDir, this.cacheName(file, filternames));
+	}
 
-			// add embed element as processed
-            this.processedElements.add(embed);
-
-        } catch (error) {
-            console.error('Dark Image Processing Error:', error);
-            embed.classList.add('dark-image-error');
-        }
-    }
-	
-    private clearCache(file: TFile) {
-        const cacheName = `${file.basename}_dark.png`;
-        const cachePath = path.join(this.cacheDir, cacheName);
-        if (fs.existsSync(cachePath)) {
-            fs.unlinkSync(cachePath);
-        }
-    }
-
-	private async processImage(file: TFile): Promise<string> {
-		const cacheName = `${file.basename}_dark.png`;
-		const cachePath = path.join(this.cacheDir, cacheName);
-
-		// Check cache freshness
-		if (fs.existsSync(cachePath)) {
-			const cacheTime = fs.statSync(cachePath).mtimeMs;
-			if (cacheTime > file.stat.mtime) return cachePath;
-		}
-
+	isFresh(file: TFile, filterNames: string[]): boolean {
+		const cachePath = this.cachePath(file, filterNames);
 		try {
-			// Read image from the vault
-			const buffer = await this.app.vault.readBinary(file);
+			if (!fs.existsSync(cachePath)) return false;
 
-			// Load the buffer with image‑js
-			let image = await Image.load(buffer);
-
-			// Ensure we are in 8‑bit RGBA space (adds alpha if missing)
-			if (image.alpha === 0) {
-				image = image.rgba8();
-			}
-
-			// Invert colours (returns a copy)
-			const inverted = image.invert();
-
-			const threshold = 13; // 0.05 * 255 ≈ 13
-			const data = inverted.data; // Uint8ClampedArray ordered RGBA per pixel
-
-			// Walk through every pixel
-			for (let i = 0; i < data.length; i += 4) {
-				const r = data[i];
-				const g = data[i + 1];
-				const b = data[i + 2];
-
-				// Near‑black → fully transparent
-				if (r < threshold && g < threshold && b < threshold) {
-					data[i] = data[i + 1] = data[i + 2] = 0;
-					data[i + 3] = 0;
-					continue;
-				}
-
-				// Otherwise boost lightness in HSL space
-				const [h, s, l] = this.rgbToHsl(r, g, b); // l ∈ [0,100]
-				const [nr, ng, nb] = this.hslToRgb(h, s, Math.min(100, l * 1.2));
-
-				data[i] = nr;
-				data[i + 1] = ng;
-				data[i + 2] = nb;
-				// alpha channel stays unchanged
-			}
-
-			// Persist the transformed image
-			// await inverted.save(cachePath, { format: 'png', useCanvas: true });
-			// return cachePath;
-
-			// 6. Serialise the transformed image to a PNG buffer
-			const pngBuffer = await inverted.toBuffer({ format: 'png' });
-
-			// 7. Persist the buffer using Obsidian's file API
-			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
-
-			return cachePath;
-
-			// const path = await inverted.toDataURL(cachePath, { format: 'png' });
-			// console.log(path)
-			// return path;
-
-		} catch (error) {
-			throw new Error(`Failed to process image: ${error.message}`);
+			const cacheStat = fs.statSync(cachePath);
+			return cacheStat.mtimeMs >= file.stat.mtime;
+		} catch {
+			return false;
 		}
+	}
+
+	clear(file: TFile, filterNames: string[]) {
+		const cachePath = this.cachePath(file, filterNames);
+		try {
+			if (fs.existsSync(cachePath)) {
+				fs.unlinkSync(cachePath);
+			}
+		} catch (error) {
+			console.error('Failed to clear cache:', error);
+		}
+	}
+
+	clearAllForFile(file: TFile) {
+		try {
+			const files = fs.readdirSync(this.cacheDir);
+			const fileHash = this.getSafeHash(file.path);
+
+			files.forEach(filename => {
+				if (filename.includes(fileHash)) {
+					const filePath = path.join(this.cacheDir, filename);
+					fs.unlinkSync(filePath);
+				}
+			});
+		} catch (error) {
+			console.error('Failed to clear cache for file:', error);
+		}
+	}
+
+	clearEntireCache() {
+		try {
+			const files = fs.readdirSync(this.cacheDir);
+			files.forEach(filename => {
+				const filePath = path.join(this.cacheDir, filename);
+				if (fs.existsSync(filePath)) {
+					fs.unlinkSync(filePath);
+				}
+			});
+		} catch (error) {
+			console.error('Failed to clear cache:', error);
+		}
+	}
+}
+
+interface ImageInput {
+	data: Image,
+	file: TFile,
+}
+
+interface ImageOutput {
+	data: Image,
+}
+
+class ImageInputOutput implements ImageInput, ImageOutput {
+	// the current data
+	data: Image;
+
+	// the original file
+	file: TFile;
+}
+
+class ImageFilterResult {
+	pathResult: Promise<string>
+}
+
+interface ImageFilter {
+	getName(): string;
+
+	processImage(image: ImageInput): ImageOutput;
+}
+
+const DarkFilterName = "dark";
+class DarkFilter implements ImageFilter {
+	getName(): string {
+		return DarkFilterName;
+	}
+
+	processImage(image: ImageInput): ImageInputOutput {
+
+		// Invert colours
+		const inverted = image.data.invert();
+
+		return {
+			data: inverted,
+			file: image.file,
+		};
+	}
+}
+
+const TransparentFilterName = "transparent";
+class TransparentFilter implements ImageFilter {
+	private threshold: number = 13;
+
+	constructor(threshold: number) {
+		this.threshold = threshold;
+	}
+
+	getName(): string {
+		return `${TransparentFilterName}--threshold=${this.threshold}`;
+	}
+
+	processImage(image: ImageInput): ImageInputOutput {
+		// Ensure we are in 8‑bit RGBA space (adds alpha if missing)
+		if (image.data.alpha === 0) {
+			image.data = image.data.rgba8();
+		}
+
+		const data = image.data.data;
+		for (let i = 0; i < data.length; i += 4) {
+			const r = data[i];
+			const g = data[i + 1];
+			const b = data[i + 2];
+
+			// Make Near‑black fully transparent
+			if (r < this.threshold &&
+				g < this.threshold &&
+				b < this.threshold
+			) {
+				data[i] = data[i + 1] = data[i + 2] = 0;
+				data[i + 3] = 0;
+			}
+		}
+
+		return {
+			data: image.data,
+			file: image.file
+		};
+	}
+}
+
+const BoostLightnessFilterName = "boost-lightness";
+class BoostLightnessFilter implements ImageFilter {
+	boost: number = 1.2;
+
+	constructor(boost: number) {
+		this.boost = boost;
+	}
+
+	getName(): string {
+		return `${BoostLightnessFilterName}--boost=${this.boost}`;
+	}
+
+	processImage(image: ImageInput): ImageInputOutput {
+		const data = image.data.data;
+		const step = image.data.channels;
+
+		assert(image.data.colorModel.startsWith("RGB"));
+
+		for (let i = 0; i < data.length; i += step) {
+			const r = data[i];
+			const g = data[i + 1];
+			const b = data[i + 2];
+
+			// Boost lightness in HSL space
+			const [h, s, l] = this.rgbToHsl(r, g, b); // l \in [0,100]
+			const [nr, ng, nb] = this.hslToRgb(h, s, Math.min(100, l * this.boost));
+
+			data[i] = nr;
+			data[i + 1] = ng;
+			data[i + 2] = nb;
+		}
+
+		return {
+			data: image.data,
+			file: image.file
+		};
 	}
 
 	// Helper: Convert RGB (0-255) to HSL (0-360, 0-100, 0-100)
@@ -280,6 +286,210 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			Math.round(b * 255)
 		];
 	}
+}
+
+export default class ImageDarkmodifierPlugin extends Plugin {
+	settings: ImageDarkmodifierPluginSettings;
+	private observer: MutationObserver;
+	private processedElements: WeakSet<HTMLImageElement> = new WeakSet();
+	private cache: ImageCache;
+
+	getVaultPath(): string | null {
+		let adapter = this.app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) {
+			return adapter.getBasePath();
+		}
+		return null;
+	}
+
+	async onload() {
+		await this.loadSettings();
+
+		this.observer = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				mutation.addedNodes.forEach(n => this.processNode(n));
+			});
+		});
+
+		this.observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+			attributes: false,
+			characterData: false
+		});
+
+		this.cache = new ImageCache(this.getVaultPath() || '', this.settings.cacheDir);
+
+		// Re-process when switching between modes
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => this.processAllImgs())
+		);
+
+		// Re-process when files are modified
+		this.registerEvent(
+			this.app.vault.on('modify', file => {
+				if (file instanceof TFile) {
+					this.cache.clearAllForFile(file);
+					this.processAllImgs();
+				}
+			})
+		);
+	}
+
+	private processAllImgs() {
+		const imgs = document.querySelectorAll(this.settings.imgSelector);
+		imgs.forEach(img => this.processImg(img as HTMLImageElement));
+	}
+
+	private processNode(node: Node) {
+		if (node instanceof HTMLImageElement && node.matches(this.settings.imgSelector)) {
+			this.processImg(node);
+		}
+		else {
+			node.childNodes.forEach(n => this.processNode(n));
+		}
+	}
+
+	private async processImg(img: HTMLImageElement) {
+		// This fixes that sometimes the images render incomplete when 
+		// we overwrite the src attribute.
+		await sleep(10);
+
+		// Skip if already processed
+		if (this.processedElements.has(img)) return;
+
+		console.log("process img: ", img)
+
+		const alt = img.alt;
+
+		console.log("alt", alt)
+
+		const filters: Array<ImageFilter> = alt.match(/@[-=.\w]+/gm)?.map(filter => {
+			const name = filter.match(/(?<=@)([\w]|-\w)+/)?.[0];
+			if (!name) return false;
+
+			console.log('filter', name);
+
+			// options may look like the following:
+			// --option-name
+			// --option-name=string_value
+			// --option-name=42
+			// --option-name=4.2
+			// --option-name=-69
+			// --option-name=-6.9
+			const options = new Map<string, any>(
+				filter.match(/(?<=--)\w+((=-{0,1}[_.\w\d]+)){0,1}/g)
+					?.map(option => {
+						// get key
+						const key = option.match(/^[-_\w]+/)?.[0];
+						if (!key) return ["<invalid>", undefined];
+
+						// get value
+						const intValue = option.match(/(?<==)-{0,1}\d+$/)?.[0];
+						const floatValue = option.match(/(?<==)-{0,1}\d*\.\d*$/)?.[0];
+						const stringValue = option.match(/(?<==)[_a-zA-Z]+/)?.[0];
+						const value =
+							intValue ? Number.parseInt(intValue)
+								: floatValue ? Number.parseFloat(floatValue)
+									: stringValue ? stringValue
+										: true;
+
+						console.log('key/value', key, value);
+
+						return [key, value];
+					})
+				?? []
+			);
+
+			// todo: use constats
+			switch (name) {
+				case DarkFilterName: return new DarkFilter();
+				case TransparentFilterName: return new TransparentFilter(options.get("threshold") as number);
+				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("boost") as number);
+				default: return false;
+			}
+		}).filter(x => x != false) ?? [];
+
+		console.log("filters", filters);
+
+		if (!filters.length) return;
+
+		// e.g. "app://0416c8ca637323b6aba7936c0ca89359b6a0/E:/obsidian-modules/test-vault/test-vault/1_oTtENBrl4x7EZlLYQo0GQA.webp?1750355750710"
+		const src = img.src;
+		const vaultPath = this.getVaultPath() || '';
+		const escapedVaultPath = vaultPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\\/g, '/');
+		const regex = new RegExp(`(?<=${escapedVaultPath}?/).*(?=[?].*)`);
+		const srcVaultPath = src.match(regex)?.[0];
+
+		console.log('img.src', src);
+		console.log('vaultPath', vaultPath)
+		console.log('escapedVaultPath', escapedVaultPath);
+		console.log('regex', regex);
+		console.log('srcVaultPath', srcVaultPath);
+
+		if (!srcVaultPath) return;
+
+		// Get the actual file
+		const file = this.app.vault.getAbstractFileByPath(srcVaultPath);
+		if (!(file instanceof TFile)) return;
+
+		try {
+			// Process image and get cache path
+			const cachePath = await this.processImage(file, filters);
+
+			console.log('cachePath', cachePath);
+
+			// update img element
+			// there's sometimes weird query params like "path/file.png?9845729" behind the thingy, so 
+			// we need to also replace those.
+			img.src = img.src.replace(new RegExp(`${file.path}.*`), cachePath);
+
+			// add embed element as processed
+			this.processedElements.add(img);
+
+		} catch (error) {
+			console.error('Dark Image Processing Error:', error);
+		}
+	}
+
+	private async processImage(file: TFile, filters: Array<ImageFilter>): Promise<string> {
+		console.log('process image: ', file, filters);
+
+		const filterNames = filters.map(f => f.getName());
+		const cachePath = this.cache.cachePath(file, filterNames);
+
+		console.log('filter names: ', filterNames);
+		console.log('cachepath: ', cachePath);
+
+		if (this.cache.isFresh(file, filterNames)) {
+			return cachePath;
+		}
+
+		try {
+			// Read image from the vault
+			const buffer = await this.app.vault.readBinary(file);
+			const image = await Image.load(buffer);
+
+			// Apply filters
+			const output = filters.reduce(
+				(input, filter) => filter.processImage(input),
+				{ data: image, file: file } as ImageInput
+			);
+
+			// Save image
+			const pngBuffer = await output.data.toBuffer({ format: 'png' });
+			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
+
+			return cachePath;
+
+		} catch (error) {
+			throw new Error(`Failed to process image: ${error.message}`);
+		}
+	}
+
+	clearCache() {
+		this.cache.clearEntireCache();
+	}
 
 	onunload() {
 		if (this.observer) {
@@ -309,21 +519,29 @@ class SampleSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		// todo: clear cache button
-
-		// todo: cache directory option
-
-		// todo: option to detect, whether an image should get the filter automatically and then also add a @dark in the alt after the user pasted the image, as if the user did it.
-
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
+			.setName('Cache Directory')
+			.setDesc('Where the modified images will be stored')
 			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
+				.setPlaceholder('Enter the path')
+				.setValue(this.plugin.settings.cacheDir)
 				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
+					this.plugin.settings.cacheDir = value;
 					await this.plugin.saveSettings();
 				}));
+
+		new Setting(containerEl)
+			.setName("Clear cache")
+			.setDesc("Clear the image cache")
+			.addButton((buttonComponent) => {
+				buttonComponent.onClick(() => this.plugin.clearCache())
+			});
+
+		// todo: option to detect, whether an image should get the filter automatically and then also add a @dark in the alt after the user pasted the image, as if the user did it.
+		// 
+		// todo: make settings available in the app
 	}
 }
+
+
+// todo: handle internet images
