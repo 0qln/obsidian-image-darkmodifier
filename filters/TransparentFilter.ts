@@ -9,7 +9,10 @@ export class TransparentFilter implements ImageFilter {
 	private threshold: number | ColorInstance = 13;
 	private removeDirection: 'up' | 'down' = 'down';
 
-	constructor(threshold: number | ColorInstance | undefined, removeDirection: 'up' | 'down' | undefined) {
+	constructor(
+		threshold: number | ColorInstance | undefined = undefined, 
+		removeDirection: 'up' | 'down' | undefined = undefined
+	) {
 		this.threshold = threshold ?? this.threshold;
 		this.removeDirection = removeDirection ?? this.removeDirection;
 	}

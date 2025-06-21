@@ -8,6 +8,7 @@ import { TransparentFilterName, TransparentFilter } from 'filters/TransparentFil
 import { BoostLightnessFilterName, BoostLightnessFilter } from 'filters/BoostLightnessFilter';
 import { FilterInput } from 'filters/FilterInput';
 import Color from 'color';
+import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
@@ -129,6 +130,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 					options.get("removeDirection")
 				);
 				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("amount") as number);
+				case DarkModeFilterName: return new DarkModeFilter();
 				default: return false;
 			}
 		}).filter(x => x != false) ?? [];
