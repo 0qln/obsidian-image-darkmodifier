@@ -16,13 +16,6 @@ const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
 }
 
 class ImageCache {
-	private ensureCacheDir() {
-		const dir = path.join(this.vaultPath, this.cacheDir);
-		if (!fs.existsSync(dir)) {
-			fs.mkdirSync(dir, { recursive: true });
-		}
-	}
-
 	private cacheDir: string;
 	private vaultPath: string;
 
@@ -30,6 +23,17 @@ class ImageCache {
 		this.cacheDir = cacheDir;
 		this.vaultPath = vaultPath;
 		this.ensureCacheDir();
+	}
+	
+	absoluteCacheDir(): string {
+		return path.join(this.vaultPath, this.cacheDir);
+	}
+
+	private ensureCacheDir() {
+		const dir = this.absoluteCacheDir();
+		if (!fs.existsSync(dir)) {
+			fs.mkdirSync(dir, { recursive: true });
+		}
 	}
 
 	setCacheDir(newPath: string) {
@@ -54,9 +58,13 @@ class ImageCache {
 	cachePath(file: TFile, filternames: Array<string>): string {
 		return path.join(this.cacheDir, this.cacheName(file, filternames));
 	}
+	
+	absoluteCachePath(file: TFile, filternames: Array<string>): string {
+		return path.join(this.vaultPath, this.cachePath(file, filternames));
+	}
 
 	isFresh(file: TFile, filterNames: string[]): boolean {
-		const cachePath = this.cachePath(file, filterNames);
+		const cachePath = this.absoluteCachePath(file, filterNames);
 		try {
 			if (!fs.existsSync(cachePath)) return false;
 
@@ -68,7 +76,7 @@ class ImageCache {
 	}
 
 	clear(file: TFile, filterNames: string[]) {
-		const cachePath = this.cachePath(file, filterNames);
+		const cachePath = this.absoluteCachePath(file, filterNames);
 		try {
 			if (fs.existsSync(cachePath)) {
 				fs.unlinkSync(cachePath);
@@ -79,6 +87,7 @@ class ImageCache {
 	}
 
 	clearAllForFile(file: TFile) {
+
 		try {
 			const files = fs.readdirSync(this.cacheDir);
 			const fileHash = this.getSafeHash(file.path);
@@ -95,10 +104,11 @@ class ImageCache {
 	}
 
 	clearEntireCache() {
+		const cacheDir = this.absoluteCacheDir();
 		try {
-			const files = fs.readdirSync(this.cacheDir);
+			const files = fs.readdirSync(cacheDir);
 			files.forEach(filename => {
-				const filePath = path.join(this.cacheDir, filename);
+				const filePath = path.join(cacheDir, filename);
 				if (fs.existsSync(filePath)) {
 					fs.unlinkSync(filePath);
 				}
@@ -334,6 +344,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				}
 			})
 		);
+
+		this.addSettingTab(new ImageDarkmodifierPluginSettingsTab(this.app, this));
 	}
 
 	private processAllImgs() {
@@ -506,7 +518,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 }
 
-class SampleSettingTab extends PluginSettingTab {
+class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 	plugin: ImageDarkmodifierPlugin;
 
 	constructor(app: App, plugin: ImageDarkmodifierPlugin) {
