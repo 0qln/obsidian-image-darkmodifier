@@ -363,10 +363,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	private async processImg(img: HTMLImageElement) {
-		// This fixes that sometimes the images render incomplete when 
-		// we overwrite the src attribute.
-		await sleep(10);
-
 		// Skip if already processed
 		if (this.processedElements.has(img)) return;
 
@@ -452,9 +448,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			console.log('cachePath', cachePath);
 
 			// update img element
-			// there's sometimes weird query params like "path/file.png?9845729" behind the thingy, so 
-			// we need to also replace those.
-			img.src = img.src.replace(new RegExp(`${file.path}.*`), cachePath);
+			img.src = img.src.replace(file.path, cachePath);
 
 			// add embed element as processed
 			this.processedElements.add(img);
