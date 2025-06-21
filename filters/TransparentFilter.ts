@@ -1,14 +1,15 @@
 import { ImageFilter } from 'filters/ImageFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
 import { FilterInput } from 'filters/FilterInput';
-import Color from 'color';
+import Color, { ColorInstance } from 'color';
 
 export const TransparentFilterName = "transparent";
+
 export class TransparentFilter implements ImageFilter {
-	private threshold: number | Color = 13;
+	private threshold: number | ColorInstance = 13;
 	private removeDirection: 'up' | 'down' = 'down';
 
-	constructor(threshold: number | Color | undefined, removeDirection: 'up' | 'down' | undefined) {
+	constructor(threshold: number | ColorInstance | undefined, removeDirection: 'up' | 'down' | undefined) {
 		this.threshold = threshold ?? this.threshold;
 		this.removeDirection = removeDirection ?? this.removeDirection;
 	}
@@ -22,7 +23,7 @@ export class TransparentFilter implements ImageFilter {
 		if (image.data.alpha === 0) {
 			image.data = image.data.rgba8();
 		}
-		
+
 		const threshold = {
 			r: this.threshold instanceof Color ? this.threshold.red() : this.threshold,
 			g: this.threshold instanceof Color ? this.threshold.green() : this.threshold,

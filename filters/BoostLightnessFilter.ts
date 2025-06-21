@@ -6,7 +6,7 @@ export const BoostLightnessFilterName = "boost-lightness";
 export class BoostLightnessFilter implements ImageFilter {
 	amount: number = 1.2;
 
-	constructor(amount: number|undefined) {
+	constructor(amount: number | undefined) {
 		this.amount = amount ?? this.amount;
 	}
 

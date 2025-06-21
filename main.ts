@@ -119,11 +119,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 					})
 				?? []
 			);
-			
+
 			switch (name) {
 				case InvertFilterName: return new InvertFilter();
 				case TransparentFilterName: return new TransparentFilter(
-					options.get("threshold") instanceof String 
+					options.get("threshold") instanceof String
 						? options.get("threshold")
 						: new Color(options.get("threshold")),
 					options.get("removeDirection")
