@@ -7,6 +7,7 @@ import { InvertFilterName, InvertFilter } from 'filters/InvertFilter';
 import { TransparentFilterName, TransparentFilter } from 'filters/TransparentFilter';
 import { BoostLightnessFilterName, BoostLightnessFilter } from 'filters/BoostLightnessFilter';
 import { FilterInput } from 'filters/FilterInput';
+import Color from 'color';
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
@@ -86,19 +87,19 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		// todo: suppoert for internet sources 
 
-		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\(.+?\))?/gm)?.map(filter => {
+		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\(.+?[^\\]\))?/gm)?.map(filter => {
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
 
 			// options may look like the following:
 			// option-name
-			// option-name=string_value-
+			// option-name="string_value"     '(', ')', '"', '\' have to be escaped
 			// option-name=42
 			// option-name=4.2
 			// option-name=-69
 			// option-name=-6.9
 			const options = new Map<string, any>(
-				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*[-_.\w\d]+)?/g)
+				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()\\]{1,2}|\\\\|\\\(|\\\)|\\\")*\"))))?(?=.*\))/g)
 					?.map(option => {
 						// get key
 						const key = option.match(/^[-_\w]+/)?.[0];
@@ -107,28 +108,33 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 						// get value
 						const intValue = option.match(/(?<=\s*=\s*)-?\d+$/)?.[0];
 						const floatValue = option.match(/(?<=\s*=\s*)-?\d*\.\d*$/)?.[0];
-						const stringValue = option.match(/(?<=\s*=\s*)[-_a-zA-Z]+$/)?.[0];
+						const stringValue = option.match(/(?<=\s*=\s*").*(?="$)/)?.[0];
 						const value =
-							intValue ? Number.parseInt(intValue)
-								: floatValue ? Number.parseFloat(floatValue)
-									: stringValue ? stringValue
+							intValue !== undefined ? Number.parseInt(intValue)
+								: floatValue !== undefined ? Number.parseFloat(floatValue)
+									: stringValue !== undefined ? stringValue.replace('\\(', '(').replace('\\)', ')')
 										: true;
 
 						return [key, value];
 					})
 				?? []
 			);
-
+			
 			switch (name) {
 				case InvertFilterName: return new InvertFilter();
-				case TransparentFilterName: return new TransparentFilter(options.get("threshold") as number);
+				case TransparentFilterName: return new TransparentFilter(
+					options.get("threshold") instanceof String 
+						? options.get("threshold")
+						: new Color(options.get("threshold")),
+					options.get("removeDirection")
+				);
 				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("amount") as number);
 				default: return false;
 			}
 		}).filter(x => x != false) ?? [];
 
 		console.log("[  PROCESS IMG  ]   parsed filters: ", filters);
-		
+
 		// Reset to the old src 
 		if (!filters.length) {
 			img.src = originalSrc;

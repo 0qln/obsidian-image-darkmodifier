@@ -22,6 +22,10 @@
 		"typescript": "4.7.4"
 	},
 	"dependencies": {
+		"@types/color": "^4.2.0",
+		"@types/color-string": "^1.5.5",
+		"color": "^5.0.0",
+		"color-string": "^2.0.1",
 		"image-js": "^0.37.0"
 	}
 }

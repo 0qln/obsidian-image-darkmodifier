@@ -1,23 +1,32 @@
 import { ImageFilter } from 'filters/ImageFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
 import { FilterInput } from 'filters/FilterInput';
+import Color from 'color';
 
 export const TransparentFilterName = "transparent";
 export class TransparentFilter implements ImageFilter {
-	private threshold: number = 13;
+	private threshold: number | Color = 13;
+	private removeDirection: 'up' | 'down' = 'down';
 
-	constructor(threshold: number) {
-		this.threshold = threshold;
+	constructor(threshold: number | Color | undefined, removeDirection: 'up' | 'down' | undefined) {
+		this.threshold = threshold ?? this.threshold;
+		this.removeDirection = removeDirection ?? this.removeDirection;
 	}
 
 	getName(): string {
-		return `${TransparentFilterName}(threshold=${this.threshold})`;
+		return `${TransparentFilterName}(threshold=${this.threshold},removeDirection=${this.removeDirection})`;
 	}
 
 	processImage(image: FilterInput): FilterInputOutput {
 		// Ensure we are in 8‑bit RGBA space (adds alpha if missing)
 		if (image.data.alpha === 0) {
 			image.data = image.data.rgba8();
+		}
+		
+		const threshold = {
+			r: this.threshold instanceof Color ? this.threshold.red() : this.threshold,
+			g: this.threshold instanceof Color ? this.threshold.green() : this.threshold,
+			b: this.threshold instanceof Color ? this.threshold.blue() : this.threshold
 		}
 
 		const data = image.data.data;
@@ -27,11 +36,21 @@ export class TransparentFilter implements ImageFilter {
 			const b = data[i + 2];
 
 			// Make Near‑black fully transparent
-			if (r < this.threshold &&
-				g < this.threshold &&
-				b < this.threshold) {
-				data[i] = data[i + 1] = data[i + 2] = 0;
-				data[i + 3] = 0;
+			if (this.removeDirection == 'down') {
+				if (r < threshold.r &&
+					g < threshold.g &&
+					b < threshold.b) {
+					data[i] = data[i + 1] = data[i + 2] = 0;
+					data[i + 3] = 0;
+				}
+			}
+			else {
+				if (r > threshold.r &&
+					g > threshold.g &&
+					b > threshold.b) {
+					data[i] = data[i + 1] = data[i + 2] = 0;
+					data[i + 3] = 0;
+				}
 			}
 		}
 
