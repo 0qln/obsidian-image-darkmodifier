@@ -15,6 +15,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	settings: ImageDarkmodifierPluginSettings;
 	private cacheDir: string;
 	private vaultPath: string;
+	private observer: MutationObserver;
+	private processedElements: WeakSet<HTMLElement> = new WeakSet();
 
 	getVaultPath(): string | null {
 		let adapter = this.app.vault.adapter;
@@ -32,51 +34,126 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		console.log('onload')
 
-		this.registerMarkdownPostProcessor(
-			this.processImages.bind(this)
+		this.processAllEmbeds();
+
+		this.observer = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				mutation.addedNodes.forEach((node) => {
+					if (node instanceof HTMLElement) {
+						this.processNode(node);
+					}
+				});
+			});
+		});
+
+		this.observer.observe(document.body, {
+			childList: true,
+			subtree: true,
+			attributes: false,
+			characterData: false
+		});
+
+		// Re-process when switching between modes
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => {
+				this.processAllEmbeds();
+			})
+		);
+
+		// Re-process when files are modified
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile) {
+					this.clearCache(file);
+					this.processAllEmbeds();
+				}
+			})
 		);
 	}
+	
+	 private processAllEmbeds() {
+        const embeds = document.querySelectorAll('.internal-embed.media-embed.image-embed');
+        embeds.forEach(embed => {
+            if (!this.processedElements.has(embed as HTMLElement)) {
+                this.processEmbed(embed as HTMLElement);
+            }
+        });
+    }
+	
+	private processNode(node: HTMLElement) {
+        // Check if node is an image embed
+        if (node.matches('.internal-embed.media-embed.image-embed')) {
+            this.processEmbed(node);
+            return;
+        }
 
-	private async processImages(element: HTMLElement, context: MarkdownPostProcessorContext) {
-		// Wait for the document to load
-		await sleep(100);
+        // Check for embeds within the node
+        const embeds = node.querySelectorAll('.internal-embed.media-embed.image-embed');
+        embeds.forEach(embed => {
+            if (!this.processedElements.has(embed as HTMLElement)) {
+                this.processEmbed(embed as HTMLElement);
+            }
+        });
+    }
+	
+	private async processEmbed(embed: HTMLElement) {
+        // Skip if already processed
+        if (this.processedElements.has(embed)) return;
+	
+		console.log("process embed: ", embed)
+        
+		const alt = embed.getAttribute('alt') || '';
+		if (!alt.includes('@dark')) return;
+	
+		console.log(alt)
+        
+        const src = embed.getAttribute('src');
+        if (!src) return;
+	
+		console.log(src)
+        
+        const img = embed.querySelector('img');
+        if (!img) return;
+	
+		console.log(img)
+        
+        // Skip if already processed
+        if (img.hasAttribute('data-dark-processed')) return;
+        
+        // Get the actual file
+        const file = this.app.vault.getAbstractFileByPath(src);
+        if (!(file instanceof TFile)) return;
+		console.log(file);
+        
+        try {
+            // Process image and get cache path
+            const cachePath = await this.processImage(file);
 
-		const embeds = element.querySelectorAll('.internal-embed.media-embed.image-embed');
+			console.log(path.join(this.vaultPath, cachePath));
 
-		console.log(embeds);
+			// update img element
+			// there's sometimes weird query params like "path/file.png?9845729" behind the thingy, so 
+			// we need to also replace those.
+			img.src = img.src.replace(new RegExp(`${file.path}.*`), cachePath);
+            img.classList.add('dark-processed-image');
+            img.setAttribute('data-dark-processed', 'true');
 
-		embeds.forEach(async (embed) => {
-			console.log(embed);
-			const alt = embed.getAttribute('alt') || '';
-			console.log(alt)
-			if (!alt.includes('@dark')) return;
+			// add embed element as processed
+            this.processedElements.add(embed);
 
-			const src = embed.getAttribute('src');
-			if (!src) return;
-
-			console.log(src)
-
-			const img = embed.querySelector('img');
-			if (!img) return;
-
-			// Get the actual file
-			const file = this.app.vault.getAbstractFileByPath(src!);
-			if (!(file instanceof TFile)) return;
-		
-			console.log(file);
-
-			try {
-				// Process image and get cache path
-				const cachePath = await this.processImage(file as TFile);
-
-				// Create new image element
-				console.log(path.join(this.vaultPath, cachePath));
-				img!.src = img.src.replace(file.path, cachePath);		
-			} catch (error) {
-				console.error('Dark Image Processing Error:', error);
-			}
-		});
-	}
+        } catch (error) {
+            console.error('Dark Image Processing Error:', error);
+            embed.classList.add('dark-image-error');
+        }
+    }
+	
+    private clearCache(file: TFile) {
+        const cacheName = `${file.basename}_dark.png`;
+        const cachePath = path.join(this.cacheDir, cacheName);
+        if (fs.existsSync(cachePath)) {
+            fs.unlinkSync(cachePath);
+        }
+    }
 
 	private async processImage(file: TFile): Promise<string> {
 		const cacheName = `${file.basename}_dark.png`;
@@ -134,11 +211,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// return cachePath;
 
 			// 6. Serialise the transformed image to a PNG buffer
-			const pngBuffer = await inverted.toBuffer({format: 'png'});
+			const pngBuffer = await inverted.toBuffer({ format: 'png' });
 
 			// 7. Persist the buffer using Obsidian's file API
 			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
-			
+
 			return cachePath;
 
 			// const path = await inverted.toDataURL(cachePath, { format: 'png' });
@@ -205,7 +282,9 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	onunload() {
-
+		if (this.observer) {
+			this.observer.disconnect();
+		}
 	}
 
 	async loadSettings() {
