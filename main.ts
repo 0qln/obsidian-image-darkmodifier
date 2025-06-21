@@ -77,44 +77,56 @@ class ImageCache {
 
 	clear(file: TFile, filterNames: string[]) {
 		const cachePath = this.absoluteCachePath(file, filterNames);
+
+		console.log('[  CACHE  ]   clear: ', cachePath);
+
 		try {
 			if (fs.existsSync(cachePath)) {
 				fs.unlinkSync(cachePath);
 			}
 		} catch (error) {
-			console.error('Failed to clear cache:', error);
+			console.error('[  CACHE  ]   failed to clear cache:', error);
 		}
 	}
 
 	clearAllForFile(file: TFile) {
+		console.log('[  CACHE  ]   clear all: ', file.name);
 
 		try {
-			const files = fs.readdirSync(this.cacheDir);
+			const cacheDir = this.absoluteCacheDir();
+			const files = fs.readdirSync(cacheDir);
 			const fileHash = this.getSafeHash(file.path);
 
 			files.forEach(filename => {
 				if (filename.includes(fileHash)) {
-					const filePath = path.join(this.cacheDir, filename);
+					const filePath = path.join(cacheDir, filename);
 					fs.unlinkSync(filePath);
+
+					console.log('[  CACHE  ]   * clear: ', filePath);
 				}
 			});
 		} catch (error) {
-			console.error('Failed to clear cache for file:', error);
+			console.error('[  CACHE  ]   failed to clear cache for file:', error);
 		}
 	}
 
 	clearEntireCache() {
 		const cacheDir = this.absoluteCacheDir();
+
+		console.log('[  CACHE  ]   clear entire cache: ', cacheDir);
+
 		try {
 			const files = fs.readdirSync(cacheDir);
 			files.forEach(filename => {
 				const filePath = path.join(cacheDir, filename);
 				if (fs.existsSync(filePath)) {
 					fs.unlinkSync(filePath);
+
+					console.log('[  CACHE  ]   * clear: ', filePath);
 				}
 			});
 		} catch (error) {
-			console.error('Failed to clear cache:', error);
+			console.error('[  CACHE  ]   failed to clear cache:', error);
 		}
 	}
 }
@@ -301,7 +313,6 @@ class BoostLightnessFilter implements ImageFilter {
 export default class ImageDarkmodifierPlugin extends Plugin {
 	settings: ImageDarkmodifierPluginSettings;
 	private observer: MutationObserver;
-	private processedElements: WeakSet<HTMLImageElement> = new WeakSet();
 	private cache: ImageCache;
 
 	getVaultPath(): string | null {
@@ -338,10 +349,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		// Re-process when files are modified
 		this.registerEvent(
 			this.app.vault.on('modify', file => {
-				if (file instanceof TFile) {
-					this.cache.clearAllForFile(file);
-					this.processAllImgs();
-				}
+				this.processAllImgs();
 			})
 		);
 
@@ -363,20 +371,13 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	private async processImg(img: HTMLImageElement) {
-		// Skip if already processed
-		if (this.processedElements.has(img)) return;
-
-		console.log("process img: ", img)
+		console.log("[  PROCESS IMG  ]   process img: ", img)
 
 		const alt = img.alt;
-
-		console.log("alt", alt)
 
 		const filters: Array<ImageFilter> = alt.match(/@[-=.\w]+/gm)?.map(filter => {
 			const name = filter.match(/(?<=@)([\w]|-\w)+/)?.[0];
 			if (!name) return false;
-
-			console.log('filter', name);
 
 			// options may look like the following:
 			// --option-name
@@ -402,14 +403,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 									: stringValue ? stringValue
 										: true;
 
-						console.log('key/value', key, value);
-
 						return [key, value];
 					})
 				?? []
 			);
 
-			// todo: use constats
 			switch (name) {
 				case DarkFilterName: return new DarkFilter();
 				case TransparentFilterName: return new TransparentFilter(options.get("threshold") as number);
@@ -418,7 +416,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			}
 		}).filter(x => x != false) ?? [];
 
-		console.log("filters", filters);
+		console.log("[  PROCESS IMG  ]   parsed filters: ", filters);
 
 		if (!filters.length) return;
 
@@ -428,12 +426,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const escapedVaultPath = vaultPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\\/g, '/');
 		const regex = new RegExp(`(?<=${escapedVaultPath}?/).*(?=[?].*)`);
 		const srcVaultPath = src.match(regex)?.[0];
-
-		console.log('img.src', src);
-		console.log('vaultPath', vaultPath)
-		console.log('escapedVaultPath', escapedVaultPath);
-		console.log('regex', regex);
-		console.log('srcVaultPath', srcVaultPath);
 
 		if (!srcVaultPath) return;
 
@@ -445,13 +437,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// Process image and get cache path
 			const cachePath = await this.processImage(file, filters);
 
-			console.log('cachePath', cachePath);
-
 			// update img element
-			img.src = img.src.replace(file.path, cachePath);
+			console.log("[  PROCESS IMG  ]   old src: ", file.path);
+			console.log("[  PROCESS IMG  ]   new src: ", cachePath);
 
-			// add embed element as processed
-			this.processedElements.add(img);
+			img.src = img.src.replace(file.path, cachePath);
 
 		} catch (error) {
 			console.error('Dark Image Processing Error:', error);
@@ -459,15 +449,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	private async processImage(file: TFile, filters: Array<ImageFilter>): Promise<string> {
-		console.log('process image: ', file, filters);
-
 		const filterNames = filters.map(f => f.getName());
 		const cachePath = this.cache.cachePath(file, filterNames);
 
-		console.log('filter names: ', filterNames);
-		console.log('cachepath: ', cachePath);
-
 		if (this.cache.isFresh(file, filterNames)) {
+			console.log("[  PROCESS IMG  ]   cache hit: ", cachePath);
 			return cachePath;
 		}
 
@@ -486,6 +472,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			const pngBuffer = await output.data.toBuffer({ format: 'png' });
 			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
 
+			console.log("[  PROCESS IMG  ]   cache miss: ", cachePath);
 			return cachePath;
 
 		} catch (error) {
@@ -539,15 +526,13 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Clear cache")
 			.setDesc("Clear the image cache")
-			.addButton((buttonComponent) => {
-				buttonComponent.onClick(() => this.plugin.clearCache())
+			.addButton((button) => {
+				button.onClick(() => this.plugin.clearCache())
+				button.setButtonText("Clear cache")
 			});
 
 		// todo: option to detect, whether an image should get the filter automatically and then also add a @dark in the alt after the user pasted the image, as if the user did it.
-		// 
-		// todo: make settings available in the app
 	}
 }
-
 
 // todo: handle internet images
