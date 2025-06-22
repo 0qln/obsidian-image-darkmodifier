@@ -89,6 +89,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\(.+?[^\\]\))?/gm)?.map(filter => {
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
+		
+			// todo: escaping paranths might be annoying, better find an alternative.
 
 			// options may look like the following:
 			// option-name
@@ -300,7 +302,5 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 				button.onClick(() => this.plugin.clearCache())
 				button.setButtonText("Clear cache")
 			});
-
-		// todo: option to detect, whether an image should get the filter automatically and then also add a @dark in the alt after the user pasted the image, as if the user did it.
 	}
 }
