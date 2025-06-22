@@ -1,16 +1,19 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import { Logger } from 'Logger';
 import { TFile } from 'obsidian';
 import * as path from 'path';
 
 export class ImageCache {
 	private cacheDir: string;
 	private vaultPath: string;
+	private logger: Logger;
 
-	constructor(vaultPath: string, cacheDir: string) {
+	constructor(vaultPath: string, cacheDir: string, logger: Logger) {
 		this.cacheDir = cacheDir;
 		this.vaultPath = vaultPath;
 		this.ensureCacheDir();
+		this.logger = logger;
 	}
 
 	absoluteCacheDir(): string {
@@ -66,19 +69,19 @@ export class ImageCache {
 	clear(file: ImageInfo, filterNames: string[]) {
 		const cachePath = this.absoluteCachePath(file, filterNames);
 
-		console.log('[  CACHE  ]   clear: ', cachePath);
+		this.logger.log('[  CACHE  ]   clear: ', cachePath);
 
 		try {
 			if (fs.existsSync(cachePath)) {
 				fs.unlinkSync(cachePath);
 			}
 		} catch (error) {
-			console.error('[  CACHE  ]   failed to clear cache:', error);
+			this.logger.error('[  CACHE  ]   failed to clear cache:', error);
 		}
 	}
 
 	clearAllForFile(file: ImageInfo) {
-		console.log('[  CACHE  ]   clear all: ', file.name);
+		this.logger.log('[  CACHE  ]   clear all: ', file.name);
 
 		try {
 			const cacheDir = this.absoluteCacheDir();
@@ -90,18 +93,18 @@ export class ImageCache {
 					const filePath = path.join(cacheDir, filename);
 					fs.unlinkSync(filePath);
 
-					console.log('[  CACHE  ]   * clear: ', filePath);
+					this.logger.log('[  CACHE  ]   * clear: ', filePath);
 				}
 			});
 		} catch (error) {
-			console.error('[  CACHE  ]   failed to clear cache for file:', error);
+			this.logger.error('[  CACHE  ]   failed to clear cache for file:', error);
 		}
 	}
 
 	clearEntireCache() {
 		const cacheDir = this.absoluteCacheDir();
 
-		console.log('[  CACHE  ]   clear entire cache: ', cacheDir);
+		this.logger.log('[  CACHE  ]   clear entire cache: ', cacheDir);
 
 		try {
 			const files = fs.readdirSync(cacheDir);
@@ -110,11 +113,11 @@ export class ImageCache {
 				if (fs.existsSync(filePath)) {
 					fs.unlinkSync(filePath);
 
-					console.log('[  CACHE  ]   * clear: ', filePath);
+					this.logger.log('[  CACHE  ]   * clear: ', filePath);
 				}
 			});
 		} catch (error) {
-			console.error('[  CACHE  ]   failed to clear cache:', error);
+			this.logger.error('[  CACHE  ]   failed to clear cache:', error);
 		}
 	}
 }

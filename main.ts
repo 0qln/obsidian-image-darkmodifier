@@ -9,21 +9,25 @@ import { BoostLightnessFilterName, BoostLightnessFilter, BoostLightnessParamAmou
 import Color from 'color';
 import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
+import { Logger } from 'Logger';
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
 	imgSelector: string;
+	debug: boolean;
 }
 
 const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
 	cacheDir: path.join('.cache', 'image-darkmodifier'),
 	imgSelector: 'img',
+	debug: false,
 }
 
 export default class ImageDarkmodifierPlugin extends Plugin {
 	settings: ImageDarkmodifierPluginSettings;
 	private observer: MutationObserver;
 	private cache: ImageCache;
+	private logger: Logger;
 
 	getVaultPath(): string | null {
 		let adapter = this.app.vault.adapter;
@@ -35,6 +39,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+		
+		this.logger = new Logger(() => this.settings.debug);
 
 		this.observer = new MutationObserver((mutations) => {
 			mutations.forEach((mutation) => {
@@ -49,7 +55,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			characterData: false
 		});
 
-		this.cache = new ImageCache(this.getVaultPath() || '', this.settings.cacheDir);
+		this.cache = new ImageCache(this.getVaultPath() || '', this.settings.cacheDir, this.logger);
 
 		// Re-process when switching between modes
 		this.registerEvent(
@@ -79,7 +85,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	private async processImg(img: HTMLImageElement) {
-		console.log("[  PROCESS IMG  ]   process img: ", img)
+		this.logger.log("[  PROCESS IMG  ]   process img: ", img)
 
 		const alt = img.alt;
 		const src = img.src;
@@ -87,7 +93,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		img.setAttr('original-src', originalSrc);
 
 		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\((\){2}|[^)]{1,2})*\))?/gm)?.map(filter => {
-			console.log(filter)
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
 		
@@ -161,12 +166,12 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			}
 		}).filter(x => x != false) ?? [];
 
-		console.log("[  PROCESS IMG  ]   parsed filters: ", filters);
+		this.logger.log("[  PROCESS IMG  ]   parsed filters: ", filters);
 
 		// Reset to the old src 
 		if (!filters.length) {
 			img.src = originalSrc;
-			console.log("[  PROCESS IMG  ]   resetting src. ");
+			this.logger.log("[  PROCESS IMG  ]   resetting src. ");
 			return;
 		}
 
@@ -175,11 +180,15 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		if (url.protocol === 'app:') {
 			const vaultPath = this.getVaultPath() || '';
 			const pathname = url.pathname.replace(/^\//, '');
-			const originalSrcVaultPath = path.relative(vaultPath, pathname).replace(/\\/g, '/');
+			const originalSrcVaultPath = path.relative(vaultPath, pathname);
+			const unencoded = decodeURIComponent(originalSrcVaultPath.replace(/\\/g, '/'));
 
 			// Get the actual file
-			const file = this.app.vault.getAbstractFileByPath(originalSrcVaultPath);
-			if (!(file instanceof TFile)) return;
+			const file = this.app.vault.getAbstractFileByPath(unencoded);
+			if (!(file instanceof TFile)) {
+				this.logger.error("[  PROCESS IMG  ]   could not find file: ", unencoded);	
+				return;
+			}
 
 			try {
 				// Process image and get cache path
@@ -189,11 +198,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				// update img element
 				img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
 
-				console.log("[  PROCESS IMG  ]   old src: ", src);
-				console.log("[  PROCESS IMG  ]   new src: ", img.src);
+				this.logger.log("[  PROCESS IMG  ]   old src: ", src);
+				this.logger.log("[  PROCESS IMG  ]   new src: ", img.src);
 
 			} catch (error) {
-				console.error('Dark Image Processing Error:', error);
+				this.logger.error('[  PROCESS IMG  ]   error:', error);
 			}
 		}
 		else {
@@ -207,8 +216,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				stat: { mtime: Number.MAX_VALUE }
 			};
 
-			console.log(info)
-
 			const response = await requestUrl(url.toString());
 			const buffer = response.arrayBuffer;
 			const cachePath = await this.processImage(info, buffer, filters);
@@ -216,8 +223,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// update img element
 			img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
 
-			console.log("[  PROCESS IMG  ]   old src: ", src);
-			console.log("[  PROCESS IMG  ]   new src: ", img.src);
+			this.logger.log("[  PROCESS IMG  ]   old src: ", src);
+			this.logger.log("[  PROCESS IMG  ]   new src: ", img.src);
 
 		}
 	}
@@ -227,7 +234,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const cachePath = this.cache.cachePath(file, filterNames);
 
 		if (this.cache.isFresh(file, filterNames)) {
-			console.log("[  PROCESS IMG  ]   cache hit: ", cachePath);
+			this.logger.log("[  PROCESS IMG  ]   cache hit: ", cachePath);
 			return cachePath;
 		}
 
@@ -245,7 +252,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			const pngBuffer = await output.data.toBuffer({ format: 'png' });
 			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
 
-			console.log("[  PROCESS IMG  ]   cache miss: ", cachePath);
+			this.logger.log("[  PROCESS IMG  ]   cache miss: ", cachePath);
 			return cachePath;
 
 		} catch (error) {
@@ -302,6 +309,13 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 			.addButton((button) => {
 				button.onClick(() => this.plugin.clearCache())
 				button.setButtonText("Clear cache")
+			});
+		
+		new Setting(containerEl)
+			.setName("Debug mode")
+			.setDesc("Enable debug mode. This turn on things like logging.")
+			.addToggle((toggle) => {
+				toggle.onChange(val => this.plugin.settings.debug = val);
 			});
 	}
 }
