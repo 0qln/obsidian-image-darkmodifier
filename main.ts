@@ -86,7 +86,8 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const originalSrc = img.getAttr('original-src') || src;
 		img.setAttr('original-src', originalSrc);
 
-		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\(.+?[^\\]\))?/gm)?.map(filter => {
+		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\((\){2}|[^)]{1,2})*\))?/gm)?.map(filter => {
+			console.log(filter)
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
 		
@@ -128,7 +129,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			}
 
 			const options = new Map<string, OptionValue|undefined>(
-				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()\\]{1,2}|\\\\|\\\(|\\\)|\\\")*\"))))?(?=.*\))/g)
+				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()]{1,2}|\({2}|\){2}|\"{2})*\"))))?(?=.*\))/g)
 					?.map(option => {
 						// get key
 						const key = option.match(/^[-_\w]+/)?.[0];
@@ -142,7 +143,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 						return [key, new OptionValue(
 							intValue !== undefined ? Number.parseInt(intValue) : undefined,
 							floatValue !== undefined ? Number.parseFloat(floatValue) : undefined,
-							stringValue?.replace('\\(', '(')?.replace('\\)', ')'),
+							stringValue?.replace('((', '(')?.replace('))', ')')?.replace('""', '"'),
 						)];
 					})
 				?? []
