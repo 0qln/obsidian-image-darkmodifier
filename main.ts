@@ -4,8 +4,8 @@ import { Image } from 'image-js';
 import { ImageCache, ImageInfo, RemoteImageInfo } from 'ImageCache';
 import { ImageFilter } from 'filters/ImageFilter';
 import { InvertFilterName, InvertFilter } from 'filters/InvertFilter';
-import { TransparentFilterName, TransparentFilter } from 'filters/TransparentFilter';
-import { BoostLightnessFilterName, BoostLightnessFilter } from 'filters/BoostLightnessFilter';
+import { TransparentFilterName, TransparentFilter, ThresholdParamRemove, ThresholdParamRemoveName, ThresholdParamColorName } from 'filters/TransparentFilter';
+import { BoostLightnessFilterName, BoostLightnessFilter, BoostLightnessParamAmountName } from 'filters/BoostLightnessFilter';
 import Color from 'color';
 import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
@@ -103,7 +103,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				string: string|undefined;
 				boolean: boolean|undefined;
 				
-				parseString<T>(fn: (x: string) => T): T|undefined {
+				parseStr<T>(fn: (x: string) => T): T|undefined {
 					return this.string === undefined
 						? undefined
 						: fn(this.string);
@@ -149,10 +149,10 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			switch (name) {
 				case InvertFilterName: return new InvertFilter();
 				case TransparentFilterName: return new TransparentFilter(
-					options.get("threshold")?.number ?? options.get("threshold")?.parseString(x => Color(x)),
-					options.get("removeDirection")?.string as "up" | "down"
+					options.get(ThresholdParamColorName)?.number ?? options.get(ThresholdParamColorName)?.parseStr(x => Color(x)),
+					options.get(ThresholdParamRemoveName)?.string as ThresholdParamRemove
 				);
-				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("amount")?.number);
+				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get(BoostLightnessParamAmountName)?.number);
 				case DarkModeFilterName: return new DarkModeFilter();
 				default: return false;
 			}

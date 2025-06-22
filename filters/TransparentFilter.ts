@@ -5,20 +5,26 @@ import Color, { ColorInstance } from 'color';
 
 export const TransparentFilterName = "transparent";
 
+export type ThresholdParamRemove = 'above' | 'below';
+export const ThresholdParamRemoveName = 'remove';
+
+export type ThresholdParamColor = number | ColorInstance; 
+export const ThresholdParamColorName = 'threshold';
+
 export class TransparentFilter implements ImageFilter {
-	private threshold: number | ColorInstance = 13;
-	private removeDirection: 'up' | 'down' = 'down';
+	private threshold: ThresholdParamColor = 13;
+	private removeDirection: ThresholdParamRemove = 'below';
 
 	constructor(
-		threshold: number | ColorInstance | undefined = undefined,
-		removeDirection: 'up' | 'down' | undefined = undefined
+		threshold: ThresholdParamColor | undefined = undefined,
+		removeDirection: ThresholdParamRemove | undefined = undefined
 	) {
 		this.threshold = threshold ?? this.threshold;
 		this.removeDirection = removeDirection ?? this.removeDirection;
 	}
 
 	getName(): string {
-		return `${TransparentFilterName}(threshold=${this.threshold},removeDirection=${this.removeDirection})`;
+		return `${TransparentFilterName}(${ThresholdParamColorName}=${this.threshold},${ThresholdParamRemoveName}=${this.removeDirection})`;
 	}
 
 	processImage(image: FilterInput): FilterInputOutput {
@@ -40,7 +46,7 @@ export class TransparentFilter implements ImageFilter {
 			const b = data[i + 2];
 
 			// Make Near‑black fully transparent
-			if (this.removeDirection == 'down') {
+			if (this.removeDirection == 'below') {
 				if (r < threshold.r &&
 					g < threshold.g &&
 					b < threshold.b) {

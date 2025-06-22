@@ -3,6 +3,10 @@ import { FilterInputOutput } from 'filters/FilterInputOutput';
 import { FilterInput } from 'filters/FilterInput';
 
 export const BoostLightnessFilterName = "boost-lightness";
+
+export type BoostLightnessParamAmount = number;
+export const BoostLightnessParamAmountName = "amount";
+
 export class BoostLightnessFilter implements ImageFilter {
 	amount: number = 1.2;
 
@@ -11,7 +15,7 @@ export class BoostLightnessFilter implements ImageFilter {
 	}
 
 	getName(): string {
-		return `${BoostLightnessFilterName}(amount=${this.amount})`;
+		return `${BoostLightnessFilterName}(${BoostLightnessParamAmountName}=${this.amount})`;
 	}
 
 	processImage(image: FilterInput): FilterInputOutput {
