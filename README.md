@@ -123,4 +123,11 @@ params:
 
 ## Contributing
 
+### Filters
+
 Feel free to open pullrequests or issues. Adding new filters is really straight forward, you can use existing filters for reference.
+
+
+### Mobile support
+
+I don't use Obsidian Mobile myself, so if you want mobile support, feel free to open a PR.
