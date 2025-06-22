@@ -72,6 +72,8 @@ You can even use image links to remote images:
 ![image @invert](https://i.pinimg.com/736x/fb/74/eb/fb74ebfb80a42e0ae5a26b86d9f2fe47.jpg)
 ```
 
+*(Note that this requires a network request to fetch the image data.)*
+
 
 ## The following filters can be used:
 
@@ -121,4 +123,11 @@ params:
 
 ## Contributing
 
+### Filters
+
 Feel free to open pullrequests or issues. Adding new filters is really straight forward, you can use existing filters for reference.
+
+
+### Mobile support
+
+I don't use Obsidian Mobile myself, so if you want mobile support, feel free to open a PR.
