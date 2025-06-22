@@ -1,7 +1,7 @@
 import { FilterInput } from 'filters/FilterInput';
 import { FilterOutput } from 'filters/FilterOutput';
 import Image from 'image-js';
-import { TFile } from 'obsidian';
+import { ImageInfo } from 'ImageCache';
 
 
 export class FilterInputOutput implements FilterInput, FilterOutput {
@@ -9,5 +9,5 @@ export class FilterInputOutput implements FilterInput, FilterOutput {
 	data: Image;
 
 	// the original file
-	file: TFile;
+	file: ImageInfo;
 }

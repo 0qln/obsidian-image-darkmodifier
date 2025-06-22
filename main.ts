@@ -1,14 +1,14 @@
-import { App, FileSystemAdapter, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, FileSystemAdapter, Plugin, PluginSettingTab, requestUrl, Setting, TFile } from 'obsidian';
 import * as path from 'path';
 import { Image } from 'image-js';
-import { ImageCache } from 'ImageCache';
+import { ImageCache, ImageInfo, RemoteImageInfo } from 'ImageCache';
 import { ImageFilter } from 'filters/ImageFilter';
 import { InvertFilterName, InvertFilter } from 'filters/InvertFilter';
 import { TransparentFilterName, TransparentFilter } from 'filters/TransparentFilter';
 import { BoostLightnessFilterName, BoostLightnessFilter } from 'filters/BoostLightnessFilter';
-import { FilterInput } from 'filters/FilterInput';
 import Color from 'color';
 import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
+import { FilterInputOutput } from 'filters/FilterInputOutput';
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
@@ -16,7 +16,7 @@ interface ImageDarkmodifierPluginSettings {
 }
 
 const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
-	cacheDir: path.join('.obsidian', '.dark-image-cache'),
+	cacheDir: path.join('.cache', 'image-darkmodifier'),
 	imgSelector: 'img',
 }
 
@@ -86,8 +86,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const originalSrc = img.getAttr('original-src') || src;
 		img.setAttr('original-src', originalSrc);
 
-		// todo: suppoert for internet sources 
-
 		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\(.+?[^\\]\))?/gm)?.map(filter => {
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
@@ -99,7 +97,35 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// option-name=4.2
 			// option-name=-69
 			// option-name=-6.9
-			const options = new Map<string, any>(
+
+			class OptionValue {
+				number: number|undefined;
+				string: string|undefined;
+				boolean: boolean|undefined;
+				
+				parseString<T>(fn: (x: string) => T): T|undefined {
+					return this.string === undefined
+						? undefined
+						: fn(this.string);
+				}
+				
+				constructor(
+					int: number|undefined,
+					float: number|undefined,
+					string: string|undefined,
+				) {
+					// number is either int or float.
+					this.number = (int !== undefined) ? int : (float !== undefined) ? float : undefined;				
+					
+					// string is just string.
+					this.string = string;
+					
+					// if the other 2 param values are missing, e.g. "fn(param)", it is just a boolean true.
+					this.boolean = this.number === undefined && this.string === undefined;
+				}
+			}
+
+			const options = new Map<string, OptionValue|undefined>(
 				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()\\]{1,2}|\\\\|\\\(|\\\)|\\\")*\"))))?(?=.*\))/g)
 					?.map(option => {
 						// get key
@@ -110,13 +136,12 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 						const intValue = option.match(/(?<=\s*=\s*)-?\d+$/)?.[0];
 						const floatValue = option.match(/(?<=\s*=\s*)-?\d*\.\d*$/)?.[0];
 						const stringValue = option.match(/(?<=\s*=\s*").*(?="$)/)?.[0];
-						const value =
-							intValue !== undefined ? Number.parseInt(intValue)
-								: floatValue !== undefined ? Number.parseFloat(floatValue)
-									: stringValue !== undefined ? stringValue.replace('\\(', '(').replace('\\)', ')')
-										: true;
 
-						return [key, value];
+						return [key, new OptionValue(
+							intValue !== undefined ? Number.parseInt(intValue) : undefined,
+							floatValue !== undefined ? Number.parseFloat(floatValue) : undefined,
+							stringValue?.replace('\\(', '(')?.replace('\\)', ')'),
+						)];
 					})
 				?? []
 			);
@@ -124,12 +149,10 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			switch (name) {
 				case InvertFilterName: return new InvertFilter();
 				case TransparentFilterName: return new TransparentFilter(
-					options.get("threshold") instanceof String
-						? options.get("threshold")
-						: new Color(options.get("threshold")),
-					options.get("removeDirection")
+					options.get("threshold")?.number ?? options.get("threshold")?.parseString(x => Color(x)),
+					options.get("removeDirection")?.string as "up" | "down"
 				);
-				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("amount") as number);
+				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get("amount")?.number);
 				case DarkModeFilterName: return new DarkModeFilter();
 				default: return false;
 			}
@@ -144,33 +167,59 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			return;
 		}
 
-		const vaultPath = this.getVaultPath() || '';
-		const escapedVaultPath = vaultPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\\/g, '/');
-		const regex = new RegExp(`(?<=${escapedVaultPath}?/).*(?=[?].*)`);
-		const originalSrcVaultPath = originalSrc.match(regex)?.[0];
+		const url = new URL(originalSrc);
 
-		if (!originalSrcVaultPath) return;
+		if (url.protocol === 'app:') {
+			const vaultPath = this.getVaultPath() || '';
+			const pathname = url.pathname.replace(/^\//, '');
+			const originalSrcVaultPath = path.relative(vaultPath, pathname).replace(/\\/g, '/');
 
-		// Get the actual file
-		const file = this.app.vault.getAbstractFileByPath(originalSrcVaultPath);
-		if (!(file instanceof TFile)) return;
+			// Get the actual file
+			const file = this.app.vault.getAbstractFileByPath(originalSrcVaultPath);
+			if (!(file instanceof TFile)) return;
 
-		try {
-			// Process image and get cache path
-			const cachePath = await this.processImage(file, filters);
+			try {
+				// Process image and get cache path
+				const buffer = await this.app.vault.readBinary(file);
+				const cachePath = await this.processImage(file, buffer, filters);
+
+				// update img element
+				img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
+
+				console.log("[  PROCESS IMG  ]   old src: ", src);
+				console.log("[  PROCESS IMG  ]   new src: ", img.src);
+
+			} catch (error) {
+				console.error('Dark Image Processing Error:', error);
+			}
+		}
+		else {
+
+			const info: RemoteImageInfo = {
+				// use the whole url, so we don't have collisions between websites.
+				path: url.toString(),
+				basename: path.basename(url.pathname).replace(/\..*$/, ''),
+				name: path.basename(url.pathname),
+				// don't assume any modification times about remote files.
+				stat: { mtime: Number.MAX_VALUE }
+			};
+
+			console.log(info)
+
+			const response = await requestUrl(url.toString());
+			const buffer = response.arrayBuffer;
+			const cachePath = await this.processImage(info, buffer, filters);
 
 			// update img element
-			img.src = originalSrc.replace(file.path, cachePath);
+			img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
 
 			console.log("[  PROCESS IMG  ]   old src: ", src);
 			console.log("[  PROCESS IMG  ]   new src: ", img.src);
 
-		} catch (error) {
-			console.error('Dark Image Processing Error:', error);
 		}
 	}
 
-	private async processImage(file: TFile, filters: Array<ImageFilter>): Promise<string> {
+	private async processImage(file: ImageInfo, data: ArrayBuffer, filters: Array<ImageFilter>): Promise<string> {
 		const filterNames = filters.map(f => f.getName());
 		const cachePath = this.cache.cachePath(file, filterNames);
 
@@ -181,13 +230,12 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		try {
 			// Read image from the vault
-			const buffer = await this.app.vault.readBinary(file);
-			const image = await Image.load(buffer);
+			const image = await Image.load(data);
 
 			// Apply filters
 			const output = filters.reduce(
 				(input, filter) => filter.processImage(input),
-				{ data: image, file: file } as FilterInput
+				{ data: image, file: file } as FilterInputOutput
 			);
 
 			// Save image

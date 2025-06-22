@@ -37,21 +37,21 @@ export class ImageCache {
 			.substring(0, length);
 	}
 
-	cacheName(file: TFile, filterNames: Array<string>): string {
+	cacheName(file: ImageInfo, filterNames: Array<string>): string {
 		const hash = this.getSafeHash(file.path);
 		const name = file.basename.replace(/[^a-zA-Z0-9_-]/g, '_');
 		return `${name}_${hash}_${filterNames.join('_')}.png`;
 	}
 
-	cachePath(file: TFile, filternames: Array<string>): string {
+	cachePath(file: ImageInfo, filternames: Array<string>): string {
 		return path.join(this.cacheDir, this.cacheName(file, filternames));
 	}
 
-	absoluteCachePath(file: TFile, filternames: Array<string>): string {
+	absoluteCachePath(file: ImageInfo, filternames: Array<string>): string {
 		return path.join(this.vaultPath, this.cachePath(file, filternames));
 	}
 
-	isFresh(file: TFile, filterNames: string[]): boolean {
+	isFresh(file: ImageInfo, filterNames: string[]): boolean {
 		const cachePath = this.absoluteCachePath(file, filterNames);
 		try {
 			if (!fs.existsSync(cachePath)) return false;
@@ -63,7 +63,7 @@ export class ImageCache {
 		}
 	}
 
-	clear(file: TFile, filterNames: string[]) {
+	clear(file: ImageInfo, filterNames: string[]) {
 		const cachePath = this.absoluteCachePath(file, filterNames);
 
 		console.log('[  CACHE  ]   clear: ', cachePath);
@@ -77,7 +77,7 @@ export class ImageCache {
 		}
 	}
 
-	clearAllForFile(file: TFile) {
+	clearAllForFile(file: ImageInfo) {
 		console.log('[  CACHE  ]   clear all: ', file.name);
 
 		try {
@@ -117,4 +117,26 @@ export class ImageCache {
 			console.error('[  CACHE  ]   failed to clear cache:', error);
 		}
 	}
+}
+
+export interface ImageInfo {
+	path: string;
+	basename: string;
+	name: string;
+	stat: { mtime: number };
+}
+
+export class RemoteImageInfo implements ImageInfo {
+	path: string;
+
+	basename: string;
+
+	name: string;
+
+	// don't assume any modification times about remote files.
+	stat: { mtime: number; } = { mtime: Number.MAX_VALUE };
+}
+
+export class LocalImageInfo extends TFile implements ImageInfo {
+	// TFile implements everything we need
 }

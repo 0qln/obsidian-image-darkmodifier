@@ -1,8 +1,8 @@
 import Image from 'image-js';
-import { TFile } from 'obsidian';
+import { ImageInfo } from 'ImageCache';
 
 
 export interface FilterInput {
 	data: Image;
-	file: TFile;
+	file: ImageInfo;
 }
