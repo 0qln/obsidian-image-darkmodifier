@@ -72,6 +72,8 @@ You can even use image links to remote images:
 ![image @invert](https://i.pinimg.com/736x/fb/74/eb/fb74ebfb80a42e0ae5a26b86d9f2fe47.jpg)
 ```
 
+*(Note that this requires a network request to fetch the image data.)*
+
 
 ## The following filters can be used:
 
