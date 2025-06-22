@@ -296,7 +296,7 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 			.setName('Cache Directory')
 			.setDesc('Where the modified images will be stored')
 			.addText(text => text
-				.setPlaceholder('Enter the path')
+				.setPlaceholder('Enter the path relative to the vault')
 				.setValue(this.plugin.settings.cacheDir)
 				.onChange(async (value) => {
 					this.plugin.settings.cacheDir = value;
@@ -315,6 +315,7 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 			.setName("Debug mode")
 			.setDesc("Enable debug mode. This turn on things like logging.")
 			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.settings.debug);
 				toggle.onChange(val => this.plugin.settings.debug = val);
 			});
 	}
