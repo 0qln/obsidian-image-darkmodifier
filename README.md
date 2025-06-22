@@ -6,7 +6,11 @@ Apply filters, such as darkmode effects (with transparency), to your markdown im
 
 This is what it might look like:
 
-(todo: add image)
+No filter:
+![image](https://github.com/user-attachments/assets/d630641b-4d94-4429-9b61-caac2e9d37f3)
+
+With `@darkmode` filter:
+![image](https://github.com/user-attachments/assets/c6681dbe-6217-40a2-ae86-cc01daa5a71d)
 
 
 ## How to use this? 
