@@ -316,7 +316,10 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 			.setDesc("Enable debug mode. This turn on things like logging.")
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.settings.debug);
-				toggle.onChange(val => this.plugin.settings.debug = val);
+				toggle.onChange(async val => {
+					this.plugin.settings.debug = val;
+					await this.plugin.saveSettings();
+				});
 			});
 	}
 }
