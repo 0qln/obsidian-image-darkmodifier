@@ -131,3 +131,12 @@ Feel free to open pullrequests or issues. Adding new filters is really straight 
 ### Mobile support
 
 I don't use Obsidian Mobile myself, so if you want mobile support, feel free to open a PR.
+
+
+## Compatibility
+
+Works with 
+- ![Share Note](https://github.com/alangrainger/share-note) Plugin.
+
+Known issues:
+- none so far
