@@ -10,6 +10,7 @@ import Color from 'color';
 import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
 import { Logger } from 'Logger';
+import { ContrastAmountParamName, ContrastFilter, ContrastFilterName } from 'filters/ContrastFilter';
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
@@ -162,6 +163,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				);
 				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get(BoostLightnessParamAmountName)?.number);
 				case DarkModeFilterName: return new DarkModeFilter();
+				case ContrastFilterName: return new ContrastFilter(options.get(ContrastAmountParamName)?.number);
 				default: return false;
 			}
 		}).filter(x => x != false) ?? [];
