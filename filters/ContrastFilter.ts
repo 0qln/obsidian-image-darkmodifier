@@ -1,7 +1,6 @@
 import { ImageFilter } from 'filters/ImageFilter';
 import { FilterInputOutput } from 'filters/FilterInputOutput';
 import { FilterInput } from 'filters/FilterInput';
-import Color, { ColorInstance } from 'color';
 
 export type ContrastAmountParam = number;
 export const ContrastAmountParamName = "amount";
