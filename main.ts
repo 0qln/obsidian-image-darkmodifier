@@ -1,4 +1,4 @@
-import { App, FileSystemAdapter, Plugin, PluginSettingTab, requestUrl, Setting, TFile } from 'obsidian';
+import { App, FileSystemAdapter, Plugin, PluginSettingTab, requestUrl, Setting, TFile, Platform } from 'obsidian';
 import * as path from 'path';
 import { Image } from 'image-js';
 import { ImageCache, ImageInfo, RemoteImageInfo } from 'ImageCache';
@@ -40,7 +40,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		
+
 		this.logger = new Logger(() => this.settings.debug);
 
 		this.observer = new MutationObserver((mutations) => {
@@ -96,7 +96,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\((\){2}|[^)]{1,2})*\))?/gm)?.map(filter => {
 			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
 			if (!name) return false;
-		
+
 			// todo: escaping paranths might be annoying, better find an alternative.
 
 			// options may look like the following:
@@ -108,33 +108,33 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// option-name=-6.9
 
 			class OptionValue {
-				number: number|undefined;
-				string: string|undefined;
-				boolean: boolean|undefined;
-				
-				parseStr<T>(fn: (x: string) => T): T|undefined {
+				number: number | undefined;
+				string: string | undefined;
+				boolean: boolean | undefined;
+
+				parseStr<T>(fn: (x: string) => T): T | undefined {
 					return this.string === undefined
 						? undefined
 						: fn(this.string);
 				}
-				
+
 				constructor(
-					int: number|undefined,
-					float: number|undefined,
-					string: string|undefined,
+					int: number | undefined,
+					float: number | undefined,
+					string: string | undefined,
 				) {
 					// number is either int or float.
-					this.number = (int !== undefined) ? int : (float !== undefined) ? float : undefined;				
-					
+					this.number = (int !== undefined) ? int : (float !== undefined) ? float : undefined;
+
 					// string is just string.
 					this.string = string;
-					
+
 					// if the other 2 param values are missing, e.g. "fn(param)", it is just a boolean true.
 					this.boolean = this.number === undefined && this.string === undefined;
 				}
 			}
 
-			const options = new Map<string, OptionValue|undefined>(
+			const options = new Map<string, OptionValue | undefined>(
 				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()]{1,2}|\({2}|\){2}|\"{2})*\"))))?(?=.*\))/g)
 					?.map(option => {
 						// get key
@@ -181,14 +181,16 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		if (url.protocol === 'app:') {
 			const vaultPath = this.getVaultPath() || '';
-			const pathname = url.pathname.replace(/^\//, '');
+			const pathname = Platform.isWin
+				? url.pathname.replace(/^\//, '')
+				: url.pathname;
 			const originalSrcVaultPath = path.relative(vaultPath, pathname);
 			const unencoded = decodeURIComponent(originalSrcVaultPath.replace(/\\/g, '/'));
 
 			// Get the actual file
 			const file = this.app.vault.getAbstractFileByPath(unencoded);
 			if (!(file instanceof TFile)) {
-				this.logger.error("[  PROCESS IMG  ]   could not find file: ", unencoded);	
+				this.logger.error("[  PROCESS IMG  ]   could not find file: ", unencoded);
 				return;
 			}
 
@@ -312,7 +314,7 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 				button.onClick(() => this.plugin.clearCache())
 				button.setButtonText("Clear cache")
 			});
-		
+
 		new Setting(containerEl)
 			.setName("Debug mode")
 			.setDesc("Enable debug mode. This turn on things like logging.")
