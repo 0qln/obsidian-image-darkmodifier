@@ -297,7 +297,7 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('Cache Directory')
+			.setName('Cache directory')
 			.setDesc('Where the modified images will be stored')
 			.addText(text => text
 				.setPlaceholder('Enter the path relative to the vault')
