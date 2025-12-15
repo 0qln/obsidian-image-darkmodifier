@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-image-darkmodifier",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "Turn white image (e.g. screen shots from papers) into dark mode.",
 	"main": "main.js",
 	"scripts": {
