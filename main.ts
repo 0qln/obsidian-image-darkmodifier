@@ -166,11 +166,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 				case ContrastFilterName: return new ContrastFilter(options.get(ContrastAmountParamName)?.number);
 				default: return false;
 			}
-		}).filter(x => x != false) ?? [];
+		}).filter(x => x != false) as Array<ImageFilter> ?? [];
 
 		this.logger.log("[  PROCESS IMG  ]   parsed filters: ", filters);
 
-		// Reset to the old src 
+		// Reset to the old src
 		if (!filters.length) {
 			img.src = originalSrc;
 			this.logger.log("[  PROCESS IMG  ]   resetting src. ");
