@@ -1,1 +1,1 @@
-jjjj![[Pasted image 20251229041420.png|@sharpness((amount=1.0))]]
+ujjjj![[Pasted image 20251229041420.png|@sharpness((amount=1.9))]]
