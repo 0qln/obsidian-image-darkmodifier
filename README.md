@@ -79,12 +79,32 @@ You can even use image links to remote images:
 
 ### Darkmode
 
-Reccomended for use on images with white backgrounds (e.g. screenshots of diagrams in papers). Invertes the image, removes the background, and boosts the lightness by 1.2
-
-Essentially just a shorthand for: `@invert @transparent(threshold="rgb((13, 13, 13))", remove="below") @boost-lightness(amount=1.2)`.
+Reccomended for use on images with white backgrounds (e.g. screenshots of diagrams in papers).
 
 name: `@darkmode`
 params: none.
+
+#### Default Behavior
+
+By default, always applies dark mode adjustments: inverts the image, removes the background, and boosts the lightness by 1.2.
+
+Essentially just a shorthand for: `@invert @transparent(threshold="rgb((13, 13, 13))", remove="below") @boost-lightness(amount=1.2)`.
+
+#### Theme Aware Mode
+
+You can enable **Theme Aware Mode** in the plugin settings. When enabled, the `@darkmode` filter automatically adapts to Obsidian's current theme:
+
+**In Dark Theme:**
+- Inverts colors
+- Removes dark backgrounds (below threshold)
+- Boosts lightness by 1.2x
+
+**In Light Theme:**
+- Keeps original colors (no inversion)
+- Removes bright backgrounds (above threshold ~240)
+- Reduces lightness by 0.85x to increase contrast
+
+Images will automatically re-render when you switch between light and dark themes.
 
 
 ### Invert
