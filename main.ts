@@ -17,17 +17,20 @@ interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
 	imgSelector: string;
 	debug: boolean;
+	themeAware: boolean;
 }
 
 const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
 	cacheDir: path.join('.cache', 'image-darkmodifier'),
 	imgSelector: 'img',
 	debug: false,
+	themeAware: false,
 }
 
 export default class ImageDarkmodifierPlugin extends Plugin {
 	settings: ImageDarkmodifierPluginSettings;
 	private observer: MutationObserver;
+	private themeObserver: MutationObserver;
 	private cache: ImageCache;
 	private logger: Logger;
 
@@ -37,6 +40,26 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			return adapter.getBasePath();
 		}
 		return null;
+	}
+
+	getCurrentTheme(): 'light' | 'dark' {
+		// Check multiple sources for theme information
+		const bodyTheme = document.body.dataset.theme;
+		const bodyClass = document.body.className;
+		
+		this.logger.log("[  THEME  ]   body.dataset.theme:", bodyTheme);
+		this.logger.log("[  THEME  ]   body.className:", bodyClass);
+		
+		// Obsidian uses 'theme-light' and 'theme-dark' classes
+		if (bodyClass.includes('theme-light')) {
+			return 'light';
+		}
+		if (bodyClass.includes('theme-dark')) {
+			return 'dark';
+		}
+		
+		// Fallback to dataset
+		return bodyTheme === 'light' ? 'light' : 'dark';
 	}
 
 	async onload() {
@@ -57,6 +80,25 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			characterData: false
 		});
 
+		// Watch for theme changes (both data-theme and class attributes)
+		this.themeObserver = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				if (mutation.type === 'attributes' && 
+				    (mutation.attributeName === 'data-theme' || mutation.attributeName === 'class')) {
+					if (this.settings.themeAware) {
+						const currentTheme = this.getCurrentTheme();
+						this.logger.log("[  THEME CHANGE  ]   Theme changed to:", currentTheme);
+						this.processAllImgs();
+					}
+				}
+			});
+		});
+
+		this.themeObserver.observe(document.body, {
+			attributes: true,
+			attributeFilter: ['data-theme', 'class']
+		});
+
 		this.cache = new ImageCache(this.getVaultPath() || '', this.settings.cacheDir, this.logger);
 
 		// Re-process when switching between modes
@@ -72,7 +114,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		this.addSettingTab(new ImageDarkmodifierPluginSettingsTab(this.app, this));
 	}
 
-	private processAllImgs() {
+	processAllImgs() {
 		const imgs = document.querySelectorAll(this.settings.imgSelector);
 		imgs.forEach(img => this.processImg(img as HTMLImageElement));
 	}
@@ -237,9 +279,13 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 	private async processImage(file: ImageInfo, data: ArrayBuffer, filters: Array<ImageFilter>): Promise<string> {
 		const filterNames = filters.map(f => f.getName());
-		const cachePath = this.cache.cachePath(file, filterNames);
+		
+		// Get theme if themeAware is enabled
+		const theme = this.settings.themeAware ? this.getCurrentTheme() : undefined;
+		
+		const cachePath = this.cache.cachePath(file, filterNames, theme);
 
-		if (this.cache.isFresh(file, filterNames)) {
+		if (this.cache.isFresh(file, filterNames, theme)) {
 			this.logger.log("[  PROCESS IMG  ]   cache hit: ", cachePath);
 			return cachePath;
 		}
@@ -248,9 +294,9 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// Read image from the vault
 			const image = await Image.load(data);
 
-			// Apply filters
+			// Apply filters with theme context
 			const output = filters.reduce(
-				(input, filter) => filter.processImage(input),
+				(input, filter) => filter.processImage(input, theme),
 				{ data: image, file: file } as FilterInputOutput
 			);
 
@@ -273,6 +319,9 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	onunload() {
 		if (this.observer) {
 			this.observer.disconnect();
+		}
+		if (this.themeObserver) {
+			this.themeObserver.disconnect();
 		}
 	}
 
@@ -325,6 +374,19 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 				toggle.onChange(async val => {
 					this.plugin.settings.debug = val;
 					await this.plugin.saveSettings();
+				});
+			});
+
+		new Setting(containerEl)
+			.setName("Theme Aware Mode")
+			.setDesc("When enabled, @darkmode filter adapts to current theme (light/dark). When disabled, always applies dark mode adjustments.")
+			.addToggle((toggle) => {
+				toggle.setValue(this.plugin.settings.themeAware);
+				toggle.onChange(async val => {
+					this.plugin.settings.themeAware = val;
+					await this.plugin.saveSettings();
+					// Reprocess all images when setting changes
+					this.plugin.processAllImgs();
 				});
 			});
 	}
