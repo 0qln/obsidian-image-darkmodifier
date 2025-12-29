@@ -394,7 +394,6 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			: undefined;
 
 		const cachePath = this.cache.cachePath(file, filterNames, theme);
-
 		if (this.cache.isFresh(file, filterNames, theme)) {
 			this.logger.log("[  PROCESS IMG  ]   cache hit: ", cachePath);
 			return cachePath;
