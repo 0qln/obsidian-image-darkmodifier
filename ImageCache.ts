@@ -40,22 +40,23 @@ export class ImageCache {
 			.substring(0, length);
 	}
 
-	cacheName(file: ImageInfo, filterNames: Array<string>): string {
+	cacheName(file: ImageInfo, filterNames: Array<string>, theme?: 'light' | 'dark'): string {
 		const hash = this.getSafeHash(file.path);
 		const name = file.basename.replace(/[^a-zA-Z0-9_-]/g, '_');
-		return `${name}_${hash}_${filterNames.join('_')}.png`;
+		const themeStr = theme ? `_${theme}` : '';
+		return `${name}_${hash}_${filterNames.join('_')}${themeStr}.png`;
 	}
 
-	cachePath(file: ImageInfo, filternames: Array<string>): string {
-		return path.join(this.cacheDir, this.cacheName(file, filternames));
+	cachePath(file: ImageInfo, filternames: Array<string>, theme?: 'light' | 'dark'): string {
+		return path.join(this.cacheDir, this.cacheName(file, filternames, theme));
 	}
 
-	absoluteCachePath(file: ImageInfo, filternames: Array<string>): string {
-		return path.join(this.vaultPath, this.cachePath(file, filternames));
+	absoluteCachePath(file: ImageInfo, filternames: Array<string>, theme?: 'light' | 'dark'): string {
+		return path.join(this.vaultPath, this.cachePath(file, filternames, theme));
 	}
 
-	isFresh(file: ImageInfo, filterNames: string[]): boolean {
-		const cachePath = this.absoluteCachePath(file, filterNames);
+	isFresh(file: ImageInfo, filterNames: string[], theme?: 'light' | 'dark'): boolean {
+		const cachePath = this.absoluteCachePath(file, filterNames, theme);
 		try {
 			if (!fs.existsSync(cachePath)) return false;
 
@@ -66,8 +67,8 @@ export class ImageCache {
 		}
 	}
 
-	clear(file: ImageInfo, filterNames: string[]) {
-		const cachePath = this.absoluteCachePath(file, filterNames);
+	clear(file: ImageInfo, filterNames: string[], theme?: 'light' | 'dark') {
+		const cachePath = this.absoluteCachePath(file, filterNames, theme);
 
 		this.logger.log('[  CACHE  ]   clear: ', cachePath);
 
