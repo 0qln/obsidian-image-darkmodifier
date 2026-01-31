@@ -1,17 +1,44 @@
-import { App, FileSystemAdapter, Plugin, PluginSettingTab, requestUrl, Setting, TFile, Platform } from 'obsidian';
-import * as path from 'path';
-import { Image } from 'image-js';
-import { ImageCache, ImageInfo, RemoteImageInfo } from 'ImageCache';
-import { ImageFilter } from 'filters/ImageFilter';
-import { InvertFilterName, InvertFilter } from 'filters/InvertFilter';
-import { TransparentFilterName, TransparentFilter, ThresholdParamRemove, ThresholdParamRemoveName, ThresholdParamColorName } from 'filters/TransparentFilter';
-import { BoostLightnessFilterName, BoostLightnessFilter, BoostLightnessParamAmountName } from 'filters/BoostLightnessFilter';
-import Color from 'color';
-import { DarkModeFilter, DarkModeFilterName } from 'filters/DarkModeFilter';
-import { FilterInputOutput } from 'filters/FilterInputOutput';
-import { Logger } from 'Logger';
-import { ContrastAmountParamName, ContrastFilter, ContrastFilterName } from 'filters/ContrastFilter';
-import { SharpnessAmountParamName, SharpnessFilter, SharpnessFilterName } from 'filters/SharpnessFilter';
+import {
+	App,
+	FileSystemAdapter,
+	Plugin,
+	PluginSettingTab,
+	requestUrl,
+	Setting,
+	TFile,
+	Platform,
+} from "obsidian";
+import * as path from "path";
+import { Image } from "image-js";
+import { ImageCache, ImageInfo, RemoteImageInfo } from "ImageCache";
+import { ImageFilter } from "filters/ImageFilter";
+import { InvertFilterName, InvertFilter } from "filters/InvertFilter";
+import {
+	TransparentFilterName,
+	TransparentFilter,
+	ThresholdParamRemove,
+	ThresholdParamRemoveName,
+	ThresholdParamColorName,
+} from "filters/TransparentFilter";
+import {
+	BoostLightnessFilterName,
+	BoostLightnessFilter,
+	BoostLightnessParamAmountName,
+} from "filters/BoostLightnessFilter";
+import Color from "color";
+import { DarkModeFilter, DarkModeFilterName } from "filters/DarkModeFilter";
+import { FilterInputOutput } from "filters/FilterInputOutput";
+import { Logger } from "Logger";
+import {
+	ContrastAmountParamName,
+	ContrastFilter,
+	ContrastFilterName,
+} from "filters/ContrastFilter";
+import {
+	SharpnessAmountParamName,
+	SharpnessFilter,
+	SharpnessFilterName,
+} from "filters/SharpnessFilter";
 
 interface ImageDarkmodifierPluginSettings {
 	cacheDir: string;
@@ -21,11 +48,11 @@ interface ImageDarkmodifierPluginSettings {
 }
 
 const DEFAULT_SETTINGS: ImageDarkmodifierPluginSettings = {
-	cacheDir: path.join('.cache', 'image-darkmodifier'),
-	imgSelector: 'img',
+	cacheDir: path.join(".cache", "image-darkmodifier"),
+	imgSelector: "img",
 	debug: false,
 	themeAware: false,
-}
+};
 
 export default class ImageDarkmodifierPlugin extends Plugin {
 	settings: ImageDarkmodifierPluginSettings;
@@ -42,24 +69,31 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 		return null;
 	}
 
-	getCurrentTheme(): 'light' | 'dark' {
+	getCurrentTheme(): "light" | "dark" {
 		// Check multiple sources for theme information
 		const bodyTheme = document.body.dataset.theme;
 		const bodyClass = document.body.className;
-		
+
 		this.logger.log("[  THEME  ]   body.dataset.theme:", bodyTheme);
 		this.logger.log("[  THEME  ]   body.className:", bodyClass);
-		
+
+		// [COMPAT: Encore Theme + Style Settings Plugin]
+		// seems to use `encore-theme-light-...` and `encore-theme-dark-...`
+		// regardless of whether the current theme is actually dark or light.
+		// So split here to get the full classnames instead of searching the string
+		// by simply `theme-light` or `theme-dark`.
+		const bodyClasses = bodyClass.split(" ");
+
 		// Obsidian uses 'theme-light' and 'theme-dark' classes
-		if (bodyClass.includes('theme-light')) {
-			return 'light';
+		if (bodyClasses.includes("theme-light")) {
+			return "light";
 		}
-		if (bodyClass.includes('theme-dark')) {
-			return 'dark';
+		if (bodyClasses.includes("theme-dark")) {
+			return "dark";
 		}
-		
+
 		// Fallback to dataset
-		return bodyTheme === 'light' ? 'light' : 'dark';
+		return bodyTheme === "light" ? "light" : "dark";
 	}
 
 	async onload() {
@@ -69,7 +103,7 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		this.observer = new MutationObserver((mutations) => {
 			mutations.forEach((mutation) => {
-				mutation.addedNodes.forEach(n => this.processNode(n));
+				mutation.addedNodes.forEach((n) => this.processNode(n));
 			});
 		});
 
@@ -77,17 +111,23 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			childList: true,
 			subtree: true,
 			attributes: false,
-			characterData: false
+			characterData: false,
 		});
 
 		// Watch for theme changes (both data-theme and class attributes)
 		this.themeObserver = new MutationObserver((mutations) => {
 			mutations.forEach((mutation) => {
-				if (mutation.type === 'attributes' && 
-				    (mutation.attributeName === 'data-theme' || mutation.attributeName === 'class')) {
+				if (
+					mutation.type === "attributes" &&
+					(mutation.attributeName === "data-theme" ||
+						mutation.attributeName === "class")
+				) {
 					if (this.settings.themeAware) {
 						const currentTheme = this.getCurrentTheme();
-						this.logger.log("[  THEME CHANGE  ]   Theme changed to:", currentTheme);
+						this.logger.log(
+							"[  THEME CHANGE  ]   Theme changed to:",
+							currentTheme,
+						);
 						this.processAllImgs();
 					}
 				}
@@ -96,121 +136,176 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		this.themeObserver.observe(document.body, {
 			attributes: true,
-			attributeFilter: ['data-theme', 'class']
+			attributeFilter: ["data-theme", "class"],
 		});
 
-		this.cache = new ImageCache(this.getVaultPath() || '', this.settings.cacheDir, this.logger);
+		this.cache = new ImageCache(
+			this.getVaultPath() || "",
+			this.settings.cacheDir,
+			this.logger,
+		);
 
 		// Re-process when switching between modes
 		this.registerEvent(
-			this.app.workspace.on('layout-change', () => this.processAllImgs())
+			this.app.workspace.on("layout-change", () => this.processAllImgs()),
 		);
 
 		// Re-process when files are modified
 		this.registerEvent(
-			this.app.vault.on('modify', _f => this.processAllImgs())
+			this.app.vault.on("modify", (_f) => this.processAllImgs()),
 		);
 
-		this.addSettingTab(new ImageDarkmodifierPluginSettingsTab(this.app, this));
+		this.addSettingTab(
+			new ImageDarkmodifierPluginSettingsTab(this.app, this),
+		);
 	}
 
 	processAllImgs() {
 		const imgs = document.querySelectorAll(this.settings.imgSelector);
-		imgs.forEach(img => this.processImg(img as HTMLImageElement));
+		imgs.forEach((img) => this.processImg(img as HTMLImageElement));
 	}
 
 	private processNode(node: Node) {
-		if (node instanceof HTMLImageElement && node.matches(this.settings.imgSelector)) {
+		if (
+			node instanceof HTMLImageElement &&
+			node.matches(this.settings.imgSelector)
+		) {
 			this.processImg(node);
-		}
-		else {
-			node.childNodes.forEach(n => this.processNode(n));
+		} else {
+			node.childNodes.forEach((n) => this.processNode(n));
 		}
 	}
 
 	private async processImg(img: HTMLImageElement) {
-		this.logger.log("[  PROCESS IMG  ]   process img: ", img)
+		this.logger.log("[  PROCESS IMG  ]   process img: ", img);
 
 		const alt = img.alt;
 		const src = img.src;
-		const originalSrc = img.getAttr('original-src') || src;
-		img.setAttr('original-src', originalSrc);
+		const originalSrc = img.getAttr("original-src") || src;
+		img.setAttr("original-src", originalSrc);
 
-		const filters: Array<ImageFilter> = alt.match(/@[-\w]+(\((\){2}|[^)]{1,2})*\))?/gm)?.map(filter => {
-			const name = filter.match(/(?<=@)[-\w]+/)?.[0];
-			if (!name) return false;
+		const filters: Array<ImageFilter> =
+			(alt
+				.match(/@[-\w]+(\((\){2}|[^)]{1,2})*\))?/gm)
+				?.map((filter) => {
+					const name = filter.match(/(?<=@)[-\w]+/)?.[0];
+					if (!name) return false;
 
-			// todo: escaping paranths might be annoying, better find an alternative.
+					// todo: escaping paranths might be annoying, better find an alternative.
 
-			// options may look like the following:
-			// option-name
-			// option-name="string_value"     '(', ')', '"', '\' have to be escaped
-			// option-name=42
-			// option-name=4.2
-			// option-name=-69
-			// option-name=-6.9
+					// options may look like the following:
+					// option-name
+					// option-name="string_value"     '(', ')', '"', '\' have to be escaped
+					// option-name=42
+					// option-name=4.2
+					// option-name=-69
+					// option-name=-6.9
 
-			class OptionValue {
-				number: number | undefined;
-				string: string | undefined;
-				boolean: boolean | undefined;
+					class OptionValue {
+						number: number | undefined;
+						string: string | undefined;
+						boolean: boolean | undefined;
 
-				parseStr<T>(fn: (x: string) => T): T | undefined {
-					return this.string === undefined
-						? undefined
-						: fn(this.string);
-				}
+						parseStr<T>(fn: (x: string) => T): T | undefined {
+							return this.string === undefined
+								? undefined
+								: fn(this.string);
+						}
 
-				constructor(
-					int: number | undefined,
-					float: number | undefined,
-					string: string | undefined,
-				) {
-					// number is either int or float.
-					this.number = (int !== undefined) ? int : (float !== undefined) ? float : undefined;
+						constructor(
+							int: number | undefined,
+							float: number | undefined,
+							string: string | undefined,
+						) {
+							// number is either int or float.
+							this.number =
+								int !== undefined
+									? int
+									: float !== undefined
+										? float
+										: undefined;
 
-					// string is just string.
-					this.string = string;
+							// string is just string.
+							this.string = string;
 
-					// if the other 2 param values are missing, e.g. "fn(param)", it is just a boolean true.
-					this.boolean = this.number === undefined && this.string === undefined;
-				}
-			}
+							// if the other 2 param values are missing, e.g. "fn(param)", it is just a boolean true.
+							this.boolean =
+								this.number === undefined &&
+								this.string === undefined;
+						}
+					}
 
-			const options = new Map<string, OptionValue | undefined>(
-				filter.match(/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()]{1,2}|\({2}|\){2}|\"{2})*\"))))?(?=.*\))/g)
-					?.map(option => {
-						// get key
-						const key = option.match(/^[-_\w]+/)?.[0];
-						if (!key) return ["<invalid>", undefined];
+					const options = new Map<string, OptionValue | undefined>(
+						filter
+							.match(
+								/(?<=\(\s*|,\s*)[-\w]+(\s*=\s*((-?[\.\d]+)|((\"([^"()]{1,2}|\({2}|\){2}|\"{2})*\"))))?(?=.*\))/g,
+							)
+							?.map((option) => {
+								// get key
+								const key = option.match(/^[-_\w]+/)?.[0];
+								if (!key) return ["<invalid>", undefined];
 
-						// get value
-						const intValue = option.match(/(?<=\s*=\s*)-?\d+$/)?.[0];
-						const floatValue = option.match(/(?<=\s*=\s*)-?\d*\.\d*$/)?.[0];
-						const stringValue = option.match(/(?<=\s*=\s*").*(?="$)/)?.[0];
+								// get value
+								const intValue =
+									option.match(/(?<=\s*=\s*)-?\d+$/)?.[0];
+								const floatValue = option.match(
+									/(?<=\s*=\s*)-?\d*\.\d*$/,
+								)?.[0];
+								const stringValue = option.match(
+									/(?<=\s*=\s*").*(?="$)/,
+								)?.[0];
 
-						return [key, new OptionValue(
-							intValue !== undefined ? Number.parseInt(intValue) : undefined,
-							floatValue !== undefined ? Number.parseFloat(floatValue) : undefined,
-							stringValue?.replace('((', '(')?.replace('))', ')')?.replace('""', '"'),
-						)];
-					})
-				?? []
-			);
+								return [
+									key,
+									new OptionValue(
+										intValue !== undefined
+											? Number.parseInt(intValue)
+											: undefined,
+										floatValue !== undefined
+											? Number.parseFloat(floatValue)
+											: undefined,
+										stringValue
+											?.replace("((", "(")
+											?.replace("))", ")")
+											?.replace('""', '"'),
+									),
+								];
+							}) ?? [],
+					);
 
-			switch (name) {
-				case InvertFilterName: return new InvertFilter();
-				case TransparentFilterName: return new TransparentFilter(
-					options.get(ThresholdParamColorName)?.number ?? options.get(ThresholdParamColorName)?.parseStr(x => Color(x)),
-					options.get(ThresholdParamRemoveName)?.string as ThresholdParamRemove
-				);
-				case BoostLightnessFilterName: return new BoostLightnessFilter(options.get(BoostLightnessParamAmountName)?.number);
-				case DarkModeFilterName: return new DarkModeFilter();
-				case ContrastFilterName: return new ContrastFilter(options.get(ContrastAmountParamName)?.number);
-				case SharpnessFilterName: return new SharpnessFilter(options.get(SharpnessAmountParamName)?.number);
-				default: return false;
-			}
-		}).filter(x => x != false) as Array<ImageFilter> ?? [];
+					switch (name) {
+						case InvertFilterName:
+							return new InvertFilter();
+						case TransparentFilterName:
+							return new TransparentFilter(
+								options.get(ThresholdParamColorName)?.number ??
+									options
+										.get(ThresholdParamColorName)
+										?.parseStr((x) => Color(x)),
+								options.get(ThresholdParamRemoveName)
+									?.string as ThresholdParamRemove,
+							);
+						case BoostLightnessFilterName:
+							return new BoostLightnessFilter(
+								options.get(
+									BoostLightnessParamAmountName,
+								)?.number,
+							);
+						case DarkModeFilterName:
+							return new DarkModeFilter();
+						case ContrastFilterName:
+							return new ContrastFilter(
+								options.get(ContrastAmountParamName)?.number,
+							);
+						case SharpnessFilterName:
+							return new SharpnessFilter(
+								options.get(SharpnessAmountParamName)?.number,
+							);
+						default:
+							return false;
+					}
+				})
+				.filter((x) => x != false) as Array<ImageFilter>) ?? [];
 
 		this.logger.log("[  PROCESS IMG  ]   parsed filters: ", filters);
 
@@ -223,45 +318,53 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 
 		const url = new URL(originalSrc);
 
-		if (url.protocol === 'app:') {
-			const vaultPath = this.getVaultPath() || '';
+		if (url.protocol === "app:") {
+			const vaultPath = this.getVaultPath() || "";
 			const pathname = Platform.isWin
-				? url.pathname.replace(/^\//, '')
+				? url.pathname.replace(/^\//, "")
 				: url.pathname;
 			const originalSrcVaultPath = path.relative(vaultPath, pathname);
-			const unencoded = decodeURIComponent(originalSrcVaultPath.replace(/\\/g, '/'));
+			const unencoded = decodeURIComponent(
+				originalSrcVaultPath.replace(/\\/g, "/"),
+			);
 
 			// Get the actual file
 			const file = this.app.vault.getAbstractFileByPath(unencoded);
 			if (!(file instanceof TFile)) {
-				this.logger.error("[  PROCESS IMG  ]   could not find file: ", unencoded);
+				this.logger.error(
+					"[  PROCESS IMG  ]   could not find file: ",
+					unencoded,
+				);
 				return;
 			}
 
 			try {
 				// Process image and get cache path
 				const buffer = await this.app.vault.readBinary(file);
-				const cachePath = await this.processImage(file, buffer, filters);
+				const cachePath = await this.processImage(
+					file,
+					buffer,
+					filters,
+				);
 
 				// update img element
-				img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
+				img.src = this.app.vault.getResourcePath({
+					path: cachePath,
+				} as TFile);
 
 				this.logger.log("[  PROCESS IMG  ]   old src: ", src);
 				this.logger.log("[  PROCESS IMG  ]   new src: ", img.src);
-
 			} catch (error) {
-				this.logger.error('[  PROCESS IMG  ]   error:', error);
+				this.logger.error("[  PROCESS IMG  ]   error:", error);
 			}
-		}
-		else {
-
+		} else {
 			const info: RemoteImageInfo = {
 				// use the whole url, so we don't have collisions between websites.
 				path: url.toString(),
-				basename: path.basename(url.pathname).replace(/\..*$/, ''),
+				basename: path.basename(url.pathname).replace(/\..*$/, ""),
 				name: path.basename(url.pathname),
 				// don't assume any modification times about remote files.
-				stat: { mtime: Number.MAX_VALUE }
+				stat: { mtime: Number.MAX_VALUE },
 			};
 
 			const response = await requestUrl(url.toString());
@@ -269,20 +372,27 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			const cachePath = await this.processImage(info, buffer, filters);
 
 			// update img element
-			img.src = this.app.vault.getResourcePath({ path: cachePath } as TFile);
+			img.src = this.app.vault.getResourcePath({
+				path: cachePath,
+			} as TFile);
 
 			this.logger.log("[  PROCESS IMG  ]   old src: ", src);
 			this.logger.log("[  PROCESS IMG  ]   new src: ", img.src);
-
 		}
 	}
 
-	private async processImage(file: ImageInfo, data: ArrayBuffer, filters: Array<ImageFilter>): Promise<string> {
-		const filterNames = filters.map(f => f.getName());
-		
+	private async processImage(
+		file: ImageInfo,
+		data: ArrayBuffer,
+		filters: Array<ImageFilter>,
+	): Promise<string> {
+		const filterNames = filters.map((f) => f.getName());
+
 		// Get theme if themeAware is enabled
-		const theme = this.settings.themeAware ? this.getCurrentTheme() : undefined;
-		
+		const theme = this.settings.themeAware
+			? this.getCurrentTheme()
+			: undefined;
+
 		const cachePath = this.cache.cachePath(file, filterNames, theme);
 
 		if (this.cache.isFresh(file, filterNames, theme)) {
@@ -297,16 +407,15 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 			// Apply filters with theme context
 			const output = filters.reduce(
 				(input, filter) => filter.processImage(input, theme),
-				{ data: image, file: file } as FilterInputOutput
+				{ data: image, file: file } as FilterInputOutput,
 			);
 
 			// Save image
-			const pngBuffer = await output.data.toBuffer({ format: 'png' });
+			const pngBuffer = await output.data.toBuffer({ format: "png" });
 			await this.app.vault.adapter.writeBinary(cachePath, pngBuffer);
 
 			this.logger.log("[  PROCESS IMG  ]   cache miss: ", cachePath);
 			return cachePath;
-
 		} catch (error) {
 			throw new Error(`Failed to process image: ${error.message}`);
 		}
@@ -326,7 +435,11 @@ export default class ImageDarkmodifierPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData(),
+		);
 	}
 
 	async saveSettings() {
@@ -348,22 +461,24 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName('Cache directory')
-			.setDesc('Where the modified images will be stored')
-			.addText(text => text
-				.setPlaceholder('Enter the path relative to the vault')
-				.setValue(this.plugin.settings.cacheDir)
-				.onChange(async (value) => {
-					this.plugin.settings.cacheDir = value;
-					await this.plugin.saveSettings();
-				}));
+			.setName("Cache directory")
+			.setDesc("Where the modified images will be stored")
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter the path relative to the vault")
+					.setValue(this.plugin.settings.cacheDir)
+					.onChange(async (value) => {
+						this.plugin.settings.cacheDir = value;
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName("Clear cache")
 			.setDesc("Clear the image cache")
 			.addButton((button) => {
-				button.onClick(() => this.plugin.clearCache())
-				button.setButtonText("Clear cache")
+				button.onClick(() => this.plugin.clearCache());
+				button.setButtonText("Clear cache");
 			});
 
 		new Setting(containerEl)
@@ -371,7 +486,7 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 			.setDesc("Enable debug mode. This turn on things like logging.")
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.settings.debug);
-				toggle.onChange(async val => {
+				toggle.onChange(async (val) => {
 					this.plugin.settings.debug = val;
 					await this.plugin.saveSettings();
 				});
@@ -379,10 +494,12 @@ class ImageDarkmodifierPluginSettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Theme Aware Mode")
-			.setDesc("When enabled, @darkmode filter adapts to current theme (light/dark). When disabled, always applies dark mode adjustments.")
+			.setDesc(
+				"When enabled, @darkmode filter adapts to current theme (light/dark). When disabled, always applies dark mode adjustments.",
+			)
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.settings.themeAware);
-				toggle.onChange(async val => {
+				toggle.onChange(async (val) => {
 					this.plugin.settings.themeAware = val;
 					await this.plugin.saveSettings();
 					// Reprocess all images when setting changes
