@@ -155,8 +155,8 @@ I don't use Obsidian Mobile myself, so if you want mobile support, feel free to 
 
 ## Compatibility
 
-Works with 
-- ![Share Note](https://github.com/alangrainger/share-note) Plugin.
+- ![Share Note](https://github.com/alangrainger/share-note) Plugin will use the current image as you see it in Obsidian
+- Theme Detection respects ![Style Settings](https://github.com/mgmeyers/obsidian-style-settings) Plugin and any Themes such as ![Encore](https://github.com/Carbonateb/obsidian-encore-theme) that support it
 
 Known issues:
 - none so far
