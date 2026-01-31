@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "sharpness.md",
+                "file": "darkmode.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "sharpness"
+              "title": "darkmode"
             }
           },
           {
